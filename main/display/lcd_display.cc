@@ -881,8 +881,8 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_pad_bottom(version_label_, lvgl_theme->spacing(2), 0);
     {
         const esp_app_desc_t* app_desc = esp_app_get_description();
-        char version_text[40];
-        snprintf(version_text, sizeof(version_text), "v%s", app_desc->version);
+        char version_text[48];
+        snprintf(version_text, sizeof(version_text), "Hao Lab  v%s", app_desc->version);
         lv_label_set_text(version_label_, version_text);
     }
 }

@@ -1,4 +1,4 @@
-menu "Xiaozhi Assistant"
+menu "Hao Lab Agent"
 
 config OTA_URL
     string "Default OTA URL"
