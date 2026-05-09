@@ -11,6 +11,7 @@
 #include <esp_err.h>
 #include <esp_lvgl_port.h>
 #include <esp_psram.h>
+#include <esp_app_desc.h>
 #include <cstring>
 
 #include "board.h"
@@ -869,6 +870,21 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_color(low_battery_label_, lv_color_white(), 0);
     lv_obj_center(low_battery_label_);
     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
+
+    /* Persistent version label at bottom of container_ (last flex child) */
+    version_label_ = lv_label_create(container_);
+    lv_obj_set_width(version_label_, LV_HOR_RES);
+    lv_obj_set_style_text_align(version_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(version_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_opa(version_label_, LV_OPA_50, 0);
+    lv_obj_set_style_pad_top(version_label_, lvgl_theme->spacing(1), 0);
+    lv_obj_set_style_pad_bottom(version_label_, lvgl_theme->spacing(2), 0);
+    {
+        const esp_app_desc_t* app_desc = esp_app_get_description();
+        char version_text[40];
+        snprintf(version_text, sizeof(version_text), "v%s", app_desc->version);
+        lv_label_set_text(version_label_, version_text);
+    }
 }
 
 void LcdDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
