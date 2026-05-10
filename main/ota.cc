@@ -447,10 +447,13 @@ esp_err_t Ota::Activate() {
     }
 
     std::string url = GetCheckVersionUrl();
+    // Hao Lab platform runs Next.js with trailingSlash:true — POST to
+    // /api/ota/activate (no trailing slash) returns 308 redirect, which
+    // esp_http_client doesn't follow on POST. Always end the URL with "/".
     if (url.back() != '/') {
-        url += "/activate";
+        url += "/activate/";
     } else {
-        url += "activate";
+        url += "activate/";
     }
 
     auto http = SetupHttp();

@@ -117,7 +117,8 @@ void Application::CheckAssetsVersion() {
     // Apply assets
     assets.Apply();
     display->SetChatMessage("system", "");
-    display->SetEmotion("microchip_ai");
+    // Boot emoji: neutral (was "microchip_ai" — visual reset for Hao Lab cream cafe theme)
+    display->SetEmotion("neutral");
 }
 
 void Application::CheckNewVersion(Ota& ota) {

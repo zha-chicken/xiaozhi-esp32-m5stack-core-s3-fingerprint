@@ -27,17 +27,20 @@ void LcdDisplay::InitializeLcdThemes() {
     auto icon_font = std::make_shared<LvglBuiltInFont>(&BUILTIN_ICON_FONT);
     auto large_icon_font = std::make_shared<LvglBuiltInFont>(&font_awesome_30_4);
 
-    // light theme
+    // light theme — Hao Lab Cream Cafe palette
+    // bg = cream #E8E1D3, text/ink #1A1816, coral #E8533A, peach #F7CFB3.
+    // Saturated greens / pure-black removed: replaced with cream-on-ink
+    // contrast that matches the firmware-UI mockup in tmp/badge-watch.html.
     auto light_theme = new LvglTheme("light");
-    light_theme->set_background_color(lv_color_hex(0xFFFFFF));          //rgb(255, 255, 255)
-    light_theme->set_text_color(lv_color_hex(0x000000));                //rgb(0, 0, 0)
-    light_theme->set_chat_background_color(lv_color_hex(0xE0E0E0));     //rgb(224, 224, 224)
-    light_theme->set_user_bubble_color(lv_color_hex(0x00FF00));         //rgb(0, 128, 0)
-    light_theme->set_assistant_bubble_color(lv_color_hex(0xDDDDDD));    //rgb(221, 221, 221)
-    light_theme->set_system_bubble_color(lv_color_hex(0xFFFFFF));       //rgb(255, 255, 255)
-    light_theme->set_system_text_color(lv_color_hex(0x000000));         //rgb(0, 0, 0)
-    light_theme->set_border_color(lv_color_hex(0x000000));              //rgb(0, 0, 0)
-    light_theme->set_low_battery_color(lv_color_hex(0x000000));         //rgb(0, 0, 0)
+    light_theme->set_background_color(lv_color_hex(0xE8E1D3));          // cream
+    light_theme->set_text_color(lv_color_hex(0x1A1816));                // ink
+    light_theme->set_chat_background_color(lv_color_hex(0xE8E1D3));     // cream (single surface)
+    light_theme->set_user_bubble_color(lv_color_hex(0xF7CFB3));         // peach (was poison-green)
+    light_theme->set_assistant_bubble_color(lv_color_hex(0xDCD5CE));    // sand
+    light_theme->set_system_bubble_color(lv_color_hex(0xE8E1D3));       // cream
+    light_theme->set_system_text_color(lv_color_hex(0x1A1816));         // ink
+    light_theme->set_border_color(lv_color_hex(0x1A1816));              // ink
+    light_theme->set_low_battery_color(lv_color_hex(0xC8341A));         // red — warn only
     light_theme->set_text_font(text_font);
     light_theme->set_icon_font(icon_font);
     light_theme->set_large_icon_font(large_icon_font);
@@ -810,7 +813,9 @@ void LcdDisplay::SetupUI() {
     emoji_label_ = lv_label_create(emoji_box_);
     lv_obj_set_style_text_font(emoji_label_, large_icon_font, 0);
     lv_obj_set_style_text_color(emoji_label_, lvgl_theme->text_color(), 0);
-    lv_label_set_text(emoji_label_, FONT_AWESOME_MICROCHIP_AI);
+    // Default boot emoji: neutral (was MICROCHIP_AI — replaced as part of
+    // Hao Lab visual reset; this is the first frame the user sees on boot).
+    lv_label_set_text(emoji_label_, FONT_AWESOME_NEUTRAL);
 
     emoji_image_ = lv_img_create(emoji_box_);
     lv_obj_center(emoji_image_);

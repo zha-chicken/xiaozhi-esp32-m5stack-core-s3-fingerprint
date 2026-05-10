@@ -482,8 +482,16 @@ void AudioService::EnableVoiceProcessing(bool enable) {
             audio_processor_initialized_ = true;
         }
 
-        /* We should make sure no audio is playing */
-        ResetDecoder();
+        // (Hao Lab fork) Removed `ResetDecoder()` here. Upstream xiaozhi-esp32
+        // wiped the Opus decode + PCM playback queues whenever the mic came
+        // back on, with the comment "make sure no audio is playing." But on
+        // a tts.stop → Listening transition there can be ~1-2 s of buffered
+        // TTS tail still pending playback; clobbering it cuts the agent's
+        // last syllables. The decode and capture pipelines are independent
+        // (output vs input I2S), so mic-on doesn't require speaker-clear.
+        // Explicit interrupts (button / wake-word during speaking) still go
+        // through AbortSpeaking() → protocol stop → server-side stop, and
+        // can call ResetDecoder() there if a hard stop is needed.
         audio_input_need_warmup_ = true;
         audio_processor_->Start();
         xEventGroupSetBits(event_group_, AS_EVENT_AUDIO_PROCESSOR_RUNNING);
