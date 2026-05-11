@@ -236,6 +236,14 @@ bool Ota::CheckVersion() {
         ESP_LOGW(TAG, "No firmware section found!");
     }
 
+    has_avatar_url_ = false;
+    cJSON *avatar_url = cJSON_GetObjectItem(root, "avatar_url");
+    if (cJSON_IsString(avatar_url) && avatar_url->valuestring && avatar_url->valuestring[0] != '\0') {
+        avatar_url_ = avatar_url->valuestring;
+        has_avatar_url_ = true;
+        ESP_LOGI(TAG, "Avatar URL received: %s", avatar_url_.c_str());
+    }
+
     cJSON_Delete(root);
     return true;
 }

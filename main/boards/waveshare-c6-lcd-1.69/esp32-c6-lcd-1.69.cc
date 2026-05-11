@@ -113,6 +113,19 @@ public:
         // into emoji_label_, which is permanently hidden in this layout.
     }
 
+    // Replace the baked-in avatar_a on the badge avatar slot with a runtime
+    // image (typically a PNG fetched by UserAvatarSync after OTA). We retain
+    // ownership of the LvglImage so its underlying buffer outlives the
+    // lv_image_dsc_t pointed at by lv_image_set_src.
+    void SetUserAvatar(std::unique_ptr<LvglImage> image) override {
+        if (!image || !image->image_dsc()) return;
+        DisplayLockGuard lock(this);
+        if (!bf_layers_[kBfAvatar]) return;
+        lv_image_set_src(bf_layers_[kBfAvatar], image->image_dsc());
+        lv_obj_center(bf_layers_[kBfAvatar]);
+        user_avatar_image_ = std::move(image);
+    }
+
     // Step 7: status-bar overlay. Base updates the network/battery glyphs;
     // we layer Cream-Cafe semantics on top:
     //   • Wi-Fi opacity → "off" / "config" / "on" tiers per device state
@@ -352,6 +365,10 @@ private:
 
     // Pre-built badge layers — siblings inside emoji_box_
     std::array<lv_obj_t*, kBfCount> bf_layers_ = {};
+    // Holds the LvglImage backing the avatar slot when SetUserAvatar is
+    // active. Owning here keeps the decoded buffer alive for the lifetime
+    // of the displayed lv_image; replacing the avatar releases the old one.
+    std::unique_ptr<LvglImage> user_avatar_image_ = nullptr;
     // Sub-widgets needed for runtime updates
     lv_obj_t*   bf_pairing_code_   = nullptr;
     lv_obj_t*   bf_upgrading_pct_  = nullptr;

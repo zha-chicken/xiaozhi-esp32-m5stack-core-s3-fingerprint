@@ -9,6 +9,7 @@
 #include "mcp_server.h"
 #include "assets.h"
 #include "settings.h"
+#include "user_avatar_sync.h"
 
 #include <cstring>
 #include <esp_log.h>
@@ -165,6 +166,14 @@ void Application::CheckNewVersion(Ota& ota) {
 
         // No new version, mark the current version as valid
         ota.MarkCurrentVersionValid();
+
+        // Server returns avatar_url only for bound devices (mutually exclusive
+        // with activation block), so this fires once the user has paired and
+        // is a no-op otherwise. Detached FreeRTOS task does the HTTP + decode.
+        if (ota.HasAvatarUrl()) {
+            UserAvatarSync::SyncFromUrl(ota.GetAvatarUrl());
+        }
+
         if (!ota.HasActivationCode() && !ota.HasActivationChallenge()) {
             xEventGroupSetBits(event_group_, MAIN_EVENT_CHECK_NEW_VERSION_DONE);
             // Exit the loop if done checking new version

@@ -20,6 +20,7 @@ public:
     bool HasWebsocketConfig() { return has_websocket_config_; }
     bool HasActivationCode() { return has_activation_code_; }
     bool HasServerTime() { return has_server_time_; }
+    bool HasAvatarUrl() { return has_avatar_url_; }
     bool StartUpgrade(std::function<void(int progress, size_t speed)> callback);
     bool StartUpgradeFromUrl(const std::string& url, std::function<void(int progress, size_t speed)> callback);
     void MarkCurrentVersionValid();
@@ -29,6 +30,7 @@ public:
     const std::string& GetFirmwareUrl() const { return firmware_url_; }
     const std::string& GetActivationMessage() const { return activation_message_; }
     const std::string& GetActivationCode() const { return activation_code_; }
+    const std::string& GetAvatarUrl() const { return avatar_url_; }
     std::string GetCheckVersionUrl();
 
 private:
@@ -41,11 +43,13 @@ private:
     bool has_activation_code_ = false;
     bool has_serial_number_ = false;
     bool has_activation_challenge_ = false;
+    bool has_avatar_url_ = false;
     std::string current_version_;
     std::string firmware_version_;
     std::string firmware_url_;
     std::string activation_challenge_;
     std::string serial_number_;
+    std::string avatar_url_;
     int activation_timeout_ms_ = 30000;
 
     bool Upgrade(const std::string& firmware_url);
