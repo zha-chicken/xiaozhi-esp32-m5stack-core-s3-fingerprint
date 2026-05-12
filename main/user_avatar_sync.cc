@@ -5,6 +5,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <lvgl.h>
+
 #include "board.h"
 #include "display/lvgl_display/lvgl_display.h"
 #include "display/lvgl_display/lvgl_image.h"
@@ -13,14 +15,24 @@
 
 namespace {
 
+// BadgeWatch avatar slot fixed dimensions. The server (OTA route) picks the
+// pixel layout per board — for waveshare-esp32-c6-lcd-1.69 it returns a raw
+// little-endian RGB565 byte stream sized for these dimensions, sidestepping
+// LVGL lodepng (which always decodes to ARGB8888 = 172×172×4 ≈ 118 KB and
+// would OOM on the C6's ~112 KB free SRAM). See
+// docs/research/firmware-mods/avatar-rgb565-pipeline.md.
+constexpr int kAvatarWidth = 172;
+constexpr int kAvatarHeight = 172;
+constexpr int kAvatarStride = kAvatarWidth * 2; // RGB565: 2 bytes/pixel
+constexpr size_t kExpectedRgb565Size = kAvatarWidth * kAvatarHeight * 2;
+
 struct SyncCtx {
     std::string url;
 };
 
-// Mirrors the upstream `self.screen.preview_image` MCP tool pipeline
-// (mcp_server.cc:246-284): HTTP GET → LvglAllocatedImage → display setter.
-// Runs on its own FreeRTOS task so the OTA / boot path is not blocked, and
-// so a slow link does not stall LVGL.
+// HTTP GET → validate size → LvglAllocatedImage(data, size, w, h, stride,
+// RGB565) → display->SetUserAvatar(). Runs on its own FreeRTOS task so the
+// OTA / boot path is not blocked, and so a slow link does not stall LVGL.
 void DownloadTask(void* arg) {
     std::unique_ptr<SyncCtx> ctx(static_cast<SyncCtx*>(arg));
     const std::string& url = ctx->url;
@@ -47,8 +59,9 @@ void DownloadTask(void* arg) {
     }
 
     size_t content_length = http->GetBodyLength();
-    if (content_length == 0) {
-        ESP_LOGE(TAG, "Empty avatar body for %s", url.c_str());
+    if (content_length != kExpectedRgb565Size) {
+        ESP_LOGE(TAG, "Unexpected avatar body size %u (want %u bytes RGB565)",
+                 (unsigned)content_length, (unsigned)kExpectedRgb565Size);
         http->Close();
         vTaskDelete(nullptr);
         return;
@@ -74,17 +87,22 @@ void DownloadTask(void* arg) {
         total_read += ret;
     }
     http->Close();
-    ESP_LOGI(TAG, "Downloaded %u avatar bytes from %s", (unsigned)total_read, url.c_str());
-
-    // LvglAllocatedImage takes ownership of `data` and calls heap_caps_free in
-    // its destructor (lvgl_image.cc:59). On decode failure image_dsc() returns
-    // a zeroed header so we reject before swapping.
-    auto image = std::make_unique<LvglAllocatedImage>(data, total_read);
-    if (!image->image_dsc() || image->image_dsc()->header.w == 0) {
-        ESP_LOGE(TAG, "LVGL failed to decode avatar (check CONFIG_LV_USE_PNG)");
+    if (total_read != content_length) {
+        ESP_LOGE(TAG, "Short avatar download: got %u of %u bytes",
+                 (unsigned)total_read, (unsigned)content_length);
+        heap_caps_free(data);
         vTaskDelete(nullptr);
         return;
     }
+    ESP_LOGI(TAG, "Downloaded %u avatar bytes (RGB565) from %s",
+             (unsigned)total_read, url.c_str());
+
+    // RGB565 raw ctor fills the header from our compile-time constants; no
+    // runtime decode needed. LvglAllocatedImage takes ownership of `data` and
+    // calls heap_caps_free in its destructor (lvgl_image.cc:59).
+    auto image = std::make_unique<LvglAllocatedImage>(
+        data, total_read, kAvatarWidth, kAvatarHeight, kAvatarStride,
+        LV_COLOR_FORMAT_RGB565);
     display->SetUserAvatar(std::move(image));
     ESP_LOGI(TAG, "Avatar slot updated");
 
