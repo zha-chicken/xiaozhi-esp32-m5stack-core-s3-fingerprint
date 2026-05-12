@@ -1,0 +1,11 @@
+dependencies:
+  idf: '>=5.3'
+description: Hao Lab ESP32 Wi-Fi provisioning portal
+files:
+  exclude:
+  - .git
+  - dist
+license: MIT
+repository: https://github.com/78/esp-wifi-connect
+url: https://github.com/78/esp-wifi-connect
+version: 2.6.2

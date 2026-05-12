@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <title>Wi-Fi 配网完成</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <style>
+        :root {
+            --bg: #faf9f5;
+            --paper: #f5f4ed;
+            --ink: #141413;
+            --ink-soft: rgba(20, 20, 19, 0.62);
+            --terracotta: #d97757;
+            --tea-brown: #8c7453;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            background:
+                radial-gradient(ellipse 80% 60% at 50% -10%, rgba(217, 119, 87, 0.045) 0%, transparent 70%),
+                var(--bg);
+            color: var(--ink);
+            font-family: "DM Sans", -apple-system, "PingFang SC", "HarmonyOS Sans SC", "Source Han Sans Rounded SC", system-ui, sans-serif;
+            letter-spacing: 0.005em;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image: radial-gradient(rgba(140, 116, 83, 0.04) 1px, transparent 1px);
+            background-size: 4px 4px;
+        }
+
+        .page {
+            min-height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            position: relative;
+        }
+
+        .card {
+            width: min(100%, 360px);
+            border: 1px solid rgba(140, 116, 83, 0.14);
+            border-radius: 24px;
+            background: rgba(245, 244, 237, 0.95);
+            box-shadow: 0 16px 40px rgba(60, 40, 12, 0.10);
+            padding: 28px 24px;
+            text-align: center;
+        }
+
+        .check {
+            width: 86px;
+            height: 86px;
+            margin: 0 auto 18px;
+            border-radius: 50%;
+            background: rgba(217, 119, 87, 0.06);
+            border: 1px solid rgba(217, 119, 87, 0.20);
+            display: grid;
+            place-items: center;
+        }
+
+        .check svg {
+            width: 48px;
+            height: 48px;
+            stroke: var(--terracotta);
+        }
+
+        h1 {
+            margin: 0;
+            color: var(--ink);
+            font-family: "Instrument Serif", "LXGW WenKai Screen R", "LXGW WenKai", Georgia, serif;
+            font-size: 24px;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: -0.005em;
+        }
+
+        p {
+            margin: 10px 0 0;
+            color: var(--ink-soft);
+            line-height: 1.7;
+        }
+
+        strong {
+            color: var(--terracotta);
+            font-family: ui-monospace, "SF Mono", monospace;
+            font-size: 22px;
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <section class="card">
+            <div class="check" aria-hidden="true">
+                <svg viewBox="0 0 52 52" fill="none">
+                    <path d="M14 27.5l7.2 7.2L38.5 17.4" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <h1>Wi-Fi 已保存</h1>
+            <p>设备将在 <strong id="countdown">3</strong> 秒后重启，然后继续连接 Hao Lab。</p>
+        </section>
+    </main>
+
+    <script>
+        window.addEventListener('load', function() {
+            var count = 3;
+            var countdownElement = document.getElementById('countdown');
+
+            var timer = setInterval(function() {
+                count--;
+                countdownElement.textContent = count;
+
+                if (count <= 0) {
+                    clearInterval(timer);
+                    fetch('/reboot', {
+                        method: 'POST'
+                    }).catch(function(error) {
+                        console.error('reboot failed:', error);
+                    });
+                }
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

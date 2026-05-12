@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <title>Hao Lab Wi-Fi 配网</title>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="referrer no-referrer">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <style>
+        :root {
+            --bg: #faf9f5;
+            --paper: #f5f4ed;
+            --paper-deep: #f0eee6;
+            --ink: #141413;
+            --ink-soft: rgba(20, 20, 19, 0.62);
+            --ink-faint: rgba(20, 20, 19, 0.32);
+            --ink-hairline: rgba(20, 20, 19, 0.08);
+            --terracotta: #d97757;
+            --terracotta-press: #c1623f;
+            --terracotta-bg: rgba(217, 119, 87, 0.06);
+            --tea-brown: #8c7453;
+            --shadow-card: 0 8px 24px rgba(60, 40, 12, 0.08);
+            --shadow-lifted: 0 16px 40px rgba(60, 40, 12, 0.10);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            min-height: 100%;
+        }
+
+        body {
+            margin: 0;
+            background:
+                radial-gradient(ellipse 80% 60% at 50% -10%, rgba(217, 119, 87, 0.045) 0%, transparent 70%),
+                var(--bg);
+            color: var(--ink);
+            font-family: "DM Sans", -apple-system, "PingFang SC", "HarmonyOS Sans SC", "Source Han Sans Rounded SC", system-ui, sans-serif;
+            line-height: 1.7;
+            letter-spacing: 0.005em;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image: radial-gradient(rgba(140, 116, 83, 0.04) 1px, transparent 1px);
+            background-size: 4px 4px;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        .page {
+            width: min(100%, 520px);
+            margin: 0 auto;
+            padding: 28px 18px 36px;
+            position: relative;
+            box-sizing: border-box;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 18px;
+        }
+
+        .brand-mark {
+            color: var(--ink);
+            font-family: "Instrument Serif", "LXGW WenKai Screen R", "LXGW WenKai", Georgia, serif;
+            font-size: 24px;
+            line-height: 1;
+            font-weight: 400;
+            letter-spacing: -0.005em;
+            text-align: center;
+        }
+
+        .card {
+            background: rgba(245, 244, 237, 0.95);
+            border: 1px solid rgba(140, 116, 83, 0.14);
+            border-radius: 24px;
+            padding: 24px;
+            box-shadow: var(--shadow-lifted);
+            backdrop-filter: blur(8px);
+        }
+
+        .byline {
+            margin-top: 18px;
+            text-align: center;
+            color: var(--ink-faint);
+            font-family: "Instrument Serif", "LXGW WenKai Screen R", "LXGW WenKai", Georgia, serif;
+            font-size: 14px;
+            letter-spacing: -0.005em;
+        }
+
+        h1 {
+            margin: 0;
+            color: var(--ink);
+            font-family: "Instrument Serif", "LXGW WenKai Screen R", "LXGW WenKai", Georgia, serif;
+            font-size: 30px;
+            line-height: 1.35;
+            font-weight: 400;
+            letter-spacing: -0.005em;
+        }
+
+        .lede {
+            margin: 10px 0 22px;
+            color: var(--ink-soft);
+            font-size: 15px;
+        }
+
+        .field {
+            margin: 0 0 16px;
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 7px;
+            color: var(--ink);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        label span {
+            color: var(--ink-soft);
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            min-height: 48px;
+            padding: 12px 13px;
+            border: 1px solid rgba(140, 116, 83, 0.18);
+            border-radius: 14px;
+            background: var(--bg);
+            color: var(--ink);
+            outline: none;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+        }
+
+        input:focus {
+            border-color: var(--terracotta);
+            box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.10);
+        }
+
+        .primary {
+            width: 100%;
+            min-height: 50px;
+            border: 0;
+            border-radius: 16px;
+            background: var(--terracotta);
+            color: #fff;
+            cursor: pointer;
+            font-weight: 700;
+            box-shadow: 0 1px 2px rgba(60, 40, 12, 0.08), 0 6px 16px rgba(60, 40, 12, 0.10);
+            transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+        }
+
+        .primary:active {
+            transform: translateY(1px);
+            background: var(--terracotta-press);
+        }
+
+        .primary:disabled {
+            cursor: not-allowed;
+            opacity: 0.58;
+            transform: none;
+        }
+
+        .scan-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 22px 0 10px;
+        }
+
+        .scan-head h2 {
+            margin: 0;
+            color: var(--ink);
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .scan-status {
+            color: var(--ink-soft);
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .ap-list {
+            display: grid;
+            gap: 9px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .ap-button {
+            width: 100%;
+            border: 1px solid rgba(140, 116, 83, 0.14);
+            border-radius: 15px;
+            background: rgba(250, 249, 245, 0.72);
+            color: var(--ink-soft);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-height: 46px;
+            padding: 10px 12px;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .ap-button.selected {
+            border-color: rgba(217, 119, 87, 0.42);
+            background: var(--terracotta-bg);
+        }
+
+        .ssid-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--ink);
+            font-weight: 600;
+        }
+
+        .signal {
+            flex: none;
+            color: var(--ink-soft);
+            font-size: 12px;
+            font-family: ui-monospace, "SF Mono", monospace;
+        }
+
+        .empty {
+            border: 1px dashed rgba(140, 116, 83, 0.24);
+            border-radius: 16px;
+            padding: 14px;
+            color: var(--ink-soft);
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .error {
+            display: none;
+            margin: 0 0 14px;
+            border-radius: 14px;
+            padding: 10px 12px;
+            background: rgba(181, 50, 50, 0.06);
+            color: #b53232;
+            font-size: 14px;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 10;
+            background: rgba(20, 20, 19, 0.18);
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .overlay.show {
+            display: flex;
+        }
+
+        .loading-card {
+            width: min(100%, 280px);
+            background: var(--paper);
+            border: 1px solid rgba(140, 116, 83, 0.14);
+            border-radius: 22px;
+            padding: 24px;
+            text-align: center;
+            box-shadow: var(--shadow-lifted);
+        }
+
+        .spinner {
+            width: 42px;
+            height: 42px;
+            margin: 0 auto 14px;
+            border: 4px solid rgba(217, 119, 87, 0.10);
+            border-top-color: var(--terracotta);
+            border-radius: 50%;
+            animation: spin 900ms linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @media (min-width: 560px) {
+            .page {
+                padding-top: 46px;
+            }
+
+            .card {
+                padding: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="overlay" id="loadingOverlay">
+        <div class="loading-card">
+            <div class="spinner"></div>
+            <strong>正在连接 Wi-Fi</strong>
+            <p style="margin: 6px 0 0; color: var(--ink-soft); font-size: 14px;">请保持手机连接当前设备热点</p>
+        </div>
+    </div>
+
+    <main class="page">
+        <header class="brand">
+            <div class="brand-mark">
+                <span>即刻创造</span>
+            </div>
+        </header>
+
+        <section class="card">
+            <h1>给设备连接 Wi-Fi</h1>
+            <p class="lede">选择家里的 2.4G Wi-Fi，输入密码后设备会自动重启并继续完成绑定。</p>
+
+            <p class="error" id="error"></p>
+
+            <form action="/submit" method="post" onsubmit="submitForm(event)">
+                <p class="field">
+                    <label for="ssid">Wi-Fi 名称 <span>也可以手动输入</span></label>
+                    <input type="text" id="ssid" name="ssid" maxlength="32" autocomplete="off" autocapitalize="none" required>
+                </p>
+
+                <p class="field">
+                    <label for="password">Wi-Fi 密码 <span>开放网络可留空</span></label>
+                    <input type="password" id="password" name="password" maxlength="64" autocomplete="off">
+                </p>
+
+                <button class="primary" type="submit" id="button">连接并保存</button>
+            </form>
+
+            <div class="scan-head">
+                <h2>附近的 Wi-Fi</h2>
+                <span class="scan-status" id="scanStatus">正在扫描...</span>
+            </div>
+            <ul class="ap-list" id="apList">
+                <li class="empty">正在寻找附近的 Wi-Fi</li>
+            </ul>
+        </section>
+        <footer class="byline">by Hao Lab</footer>
+    </main>
+
+    <script>
+        var button = document.getElementById('button');
+        var error = document.getElementById('error');
+        var ssid = document.getElementById('ssid');
+        var password = document.getElementById('password');
+        var apList = document.getElementById('apList');
+        var scanStatus = document.getElementById('scanStatus');
+        var loadingOverlay = document.getElementById('loadingOverlay');
+        var lastSelectedSsid = '';
+
+        function showError(message) {
+            error.textContent = message;
+            error.className = 'error show';
+        }
+
+        function clearError() {
+            error.textContent = '';
+            error.className = 'error';
+        }
+
+        function signalLabel(rssi) {
+            if (rssi >= -60) return '信号强';
+            if (rssi >= -72) return '信号中';
+            return '信号弱';
+        }
+
+        function renderEmpty(text) {
+            apList.innerHTML = '';
+            var item = document.createElement('li');
+            item.className = 'empty';
+            item.textContent = text;
+            apList.appendChild(item);
+        }
+
+        function selectSsid(name) {
+            lastSelectedSsid = name;
+            ssid.value = name;
+            clearError();
+            var buttons = apList.querySelectorAll('.ap-button');
+            for (var i = 0; i < buttons.length; i++) {
+                buttons[i].className = buttons[i].getAttribute('data-ssid') === name ? 'ap-button selected' : 'ap-button';
+            }
+            password.focus();
+        }
+
+        function renderAccessPoints(aps) {
+            var seen = {};
+            var visible = [];
+            for (var i = 0; i < aps.length; i++) {
+                var name = aps[i].ssid || '';
+                if (!name || seen[name]) continue;
+                seen[name] = true;
+                visible.push(aps[i]);
+            }
+
+            visible.sort(function(a, b) {
+                return b.rssi - a.rssi;
+            });
+
+            if (visible.length === 0) {
+                renderEmpty('没有扫到 Wi-Fi，可以直接手动输入名称');
+                return;
+            }
+
+            apList.innerHTML = '';
+            for (var j = 0; j < visible.length; j++) {
+                var ap = visible[j];
+                var li = document.createElement('li');
+                var itemButton = document.createElement('button');
+                itemButton.type = 'button';
+                itemButton.className = ap.ssid === lastSelectedSsid ? 'ap-button selected' : 'ap-button';
+                itemButton.setAttribute('data-ssid', ap.ssid);
+                itemButton.onclick = (function(name) {
+                    return function() {
+                        selectSsid(name);
+                    };
+                })(ap.ssid);
+
+                var nameSpan = document.createElement('span');
+                nameSpan.className = 'ssid-name';
+                nameSpan.textContent = ap.ssid;
+
+                var signalSpan = document.createElement('span');
+                signalSpan.className = 'signal';
+                signalSpan.textContent = signalLabel(ap.rssi);
+
+                itemButton.appendChild(nameSpan);
+                itemButton.appendChild(signalSpan);
+                li.appendChild(itemButton);
+                apList.appendChild(li);
+            }
+        }
+
+        function scanWifi() {
+            fetch('/scan?_=' + Date.now())
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('scan failed');
+                    }
+                    return response.json();
+                })
+                .then(function(data) {
+                    scanStatus.textContent = data.support_5g ? '已更新' : '建议使用 2.4G';
+                    renderAccessPoints(data.aps || []);
+                })
+                .catch(function() {
+                    scanStatus.textContent = '扫描失败';
+                    renderEmpty('暂时没有扫到 Wi-Fi，可以手动输入名称');
+                });
+        }
+
+        function submitForm(event) {
+            event.preventDefault();
+            clearError();
+
+            var wifiName = ssid.value.trim();
+            if (!wifiName) {
+                showError('请先选择或输入 Wi-Fi 名称');
+                ssid.focus();
+                return;
+            }
+
+            button.disabled = true;
+            loadingOverlay.className = 'overlay show';
+
+            fetch('/submit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    ssid: wifiName,
+                    password: password.value
+                })
+            })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data.success) {
+                        window.location.href = '/done.html';
+                        return;
+                    }
+                    throw new Error(data.error || '连接失败，请检查 Wi-Fi 名称和密码');
+                })
+                .catch(function(err) {
+                    loadingOverlay.className = 'overlay';
+                    button.disabled = false;
+                    showError(err.message || '连接失败，请检查 Wi-Fi 名称和密码');
+                });
+        }
+
+        ssid.addEventListener('input', function() {
+            lastSelectedSsid = ssid.value.trim();
+            clearError();
+        });
+
+        scanWifi();
+        setInterval(scanWifi, 10000);
+    </script>
+</body>
+</html>
