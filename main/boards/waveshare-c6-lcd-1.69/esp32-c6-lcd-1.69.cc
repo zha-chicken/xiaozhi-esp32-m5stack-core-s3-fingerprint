@@ -6,6 +6,7 @@
 #include "button.h"
 #include "config.h"
 #include "device_state_event.h"
+#include "user_avatar_sync.h"
 #include <font_awesome.h>
 #include <esp_log.h>
 #include "i2c_device.h"
@@ -124,6 +125,18 @@ public:
         lv_image_set_src(bf_layers_[kBfAvatar], image->image_dsc());
         lv_obj_center(bf_layers_[kBfAvatar]);
         user_avatar_image_ = std::move(image);
+        const bool was_ready = user_avatar_ready_;
+        user_avatar_ready_ = true;
+        // If we were parked on the boot layer waiting for the avatar to
+        // arrive (cache miss path), flip to the avatar layer now that we
+        // have something real to show. ApplyState handles routing on every
+        // other state transition.
+        if (!was_ready &&
+            (current_state_ == kDeviceStateIdle ||
+             current_state_ == kDeviceStateConnecting ||
+             current_state_ == kDeviceStateUnknown)) {
+            ShowBadgeLayer(kBfAvatar);
+        }
     }
 
     // Step 7: status-bar overlay. Base updates the network/battery glyphs;
@@ -369,6 +382,11 @@ private:
     // active. Owning here keeps the decoded buffer alive for the lifetime
     // of the displayed lv_image; replacing the avatar releases the old one.
     std::unique_ptr<LvglImage> user_avatar_image_ = nullptr;
+    // True once the slot points at the user's image (either rehydrated from
+    // flash cache at boot or pushed by SetUserAvatar after a fresh download).
+    // Gates the boot→avatar layer transition so we never flash the baked
+    // default in between.
+    bool user_avatar_ready_ = false;
     // Sub-widgets needed for runtime updates
     lv_obj_t*   bf_pairing_code_   = nullptr;
     lv_obj_t*   bf_upgrading_pct_  = nullptr;
@@ -683,9 +701,20 @@ private:
         if (!emoji_box_) return;
 
         // ── Layer 0: avatar (default visible) ─────────────────────────
+        // Try the persisted user avatar first — if flash has it, we render
+        // the user's image from the very first paint. Cache miss falls back
+        // to the baked `avatar_a` (cream-cafe cat) until the OTA-driven
+        // download completes.
         {
             lv_obj_t* avatar = lv_image_create(emoji_box_);
-            lv_image_set_src(avatar, &avatar_a);
+            auto cached = UserAvatarSync::LoadCachedImage();
+            if (cached) {
+                lv_image_set_src(avatar, cached->image_dsc());
+                user_avatar_image_ = std::move(cached);
+                user_avatar_ready_ = true;
+            } else {
+                lv_image_set_src(avatar, &avatar_a);
+            }
             lv_obj_center(avatar);
             bf_layers_[kBfAvatar] = avatar;
         }
@@ -737,10 +766,12 @@ private:
         };
 
         // ── Layer 1: boot ─────────────────────────────────────────────
-        // Just "启动中", centered. Halo + bottom "v… by Hao Lab" tagline
-        // carry the brand; no spinner, no inline wordmark.
+        // Spinner above + "启动中" below. Acts as both the startup screen
+        // and the avatar-not-yet-cached holding screen (UserAvatarSync
+        // parks here until SetUserAvatar fires for cache-miss boots).
         {
-            lv_obj_t* l = make_layer(kBfBoot, 0);
+            lv_obj_t* l = make_layer(kBfBoot, 8);
+            add_spinner(l);
             add_label(l, "启动中", nullptr, COLOR_INK, LV_OPA_COVER);
         }
 
@@ -957,14 +988,18 @@ private:
                 SetTickerText(AppVersionString());
                 break;
             case kDeviceStateConnecting:
-                ShowBadgeLayer(kBfAvatar);
+                // Avatar layer only if we already have the user's image —
+                // otherwise we'd flash the baked default while UserAvatarSync
+                // is still downloading. The boot layer (with spinner) is the
+                // honest "still preparing" surface.
+                ShowBadgeLayer(user_avatar_ready_ ? kBfAvatar : kBfBoot);
                 UpdateHalo(COLOR_SAGE, 140, 255, 900);     // 55 → 100 %
                 SetDialMode(kDialClock);
                 SetTickerText("正在接通…");
                 break;
             case kDeviceStateIdle:
             case kDeviceStateUnknown:
-                ShowBadgeLayer(kBfAvatar);
+                ShowBadgeLayer(user_avatar_ready_ ? kBfAvatar : kBfBoot);
                 // Coral is our brand red, always-breathing — no gray ring.
                 UpdateHalo(COLOR_CORAL, 51, 140, 5000);    // 20 → 55 %, slow & calm
                 SetDialMode(kDialClock);

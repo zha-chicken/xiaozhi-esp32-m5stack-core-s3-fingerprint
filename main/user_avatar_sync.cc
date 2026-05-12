@@ -7,6 +7,7 @@
 
 #include <lvgl.h>
 
+#include "avatar_cache.h"
 #include "board.h"
 #include "display/lvgl_display/lvgl_display.h"
 #include "display/lvgl_display/lvgl_image.h"
@@ -30,9 +31,16 @@ struct SyncCtx {
     std::string url;
 };
 
+std::unique_ptr<LvglAllocatedImage> WrapAsAllocatedImage(char* data, size_t size) {
+    return std::make_unique<LvglAllocatedImage>(
+        data, size, kAvatarWidth, kAvatarHeight, kAvatarStride,
+        LV_COLOR_FORMAT_RGB565);
+}
+
 // HTTP GET → validate size → LvglAllocatedImage(data, size, w, h, stride,
-// RGB565) → display->SetUserAvatar(). Runs on its own FreeRTOS task so the
-// OTA / boot path is not blocked, and so a slow link does not stall LVGL.
+// RGB565) → AvatarCache::Save → display->SetUserAvatar. Runs on its own
+// FreeRTOS task so the OTA / boot path is not blocked, and so a slow link
+// does not stall LVGL.
 void DownloadTask(void* arg) {
     std::unique_ptr<SyncCtx> ctx(static_cast<SyncCtx*>(arg));
     const std::string& url = ctx->url;
@@ -97,12 +105,12 @@ void DownloadTask(void* arg) {
     ESP_LOGI(TAG, "Downloaded %u avatar bytes (RGB565) from %s",
              (unsigned)total_read, url.c_str());
 
-    // RGB565 raw ctor fills the header from our compile-time constants; no
-    // runtime decode needed. LvglAllocatedImage takes ownership of `data` and
-    // calls heap_caps_free in its destructor (lvgl_image.cc:59).
-    auto image = std::make_unique<LvglAllocatedImage>(
-        data, total_read, kAvatarWidth, kAvatarHeight, kAvatarStride,
-        LV_COLOR_FORMAT_RGB565);
+    // Persist before swapping. A failed Save() is logged but non-fatal —
+    // we'd rather show the new avatar now and re-download next boot than
+    // skip the slot update because flash misbehaved.
+    AvatarCache::Save(url, data, total_read);
+
+    auto image = WrapAsAllocatedImage(data, total_read);
     display->SetUserAvatar(std::move(image));
     ESP_LOGI(TAG, "Avatar slot updated");
 
@@ -116,6 +124,14 @@ namespace UserAvatarSync {
 void SyncFromUrl(const std::string& url) {
     if (url.empty()) return;
 
+    // Boot-time LoadCachedImage() already populated the slot with the
+    // matching cached bytes, so re-downloading would be wasted RAM, flash
+    // wear, and bandwidth. Compare and bail.
+    if (AvatarCache::MatchesCachedUrl(url)) {
+        ESP_LOGI(TAG, "Avatar cache already matches OTA URL, skipping download");
+        return;
+    }
+
     auto* ctx = new SyncCtx{ url };
     BaseType_t ok = xTaskCreate(&DownloadTask, "avatar_sync", 6 * 1024, ctx,
                                 tskIDLE_PRIORITY + 1, nullptr);
@@ -123,6 +139,17 @@ void SyncFromUrl(const std::string& url) {
         ESP_LOGE(TAG, "Failed to spawn avatar_sync task");
         delete ctx;
     }
+}
+
+std::unique_ptr<LvglImage> LoadCachedImage() {
+    AvatarCache::Loaded cached;
+    if (!AvatarCache::Load(cached)) return nullptr;
+    if (cached.size != kExpectedRgb565Size) {
+        ESP_LOGW(TAG, "Cached avatar wrong size %u, ignoring", (unsigned)cached.size);
+        heap_caps_free(cached.data);
+        return nullptr;
+    }
+    return WrapAsAllocatedImage(cached.data, cached.size);
 }
 
 } // namespace UserAvatarSync
