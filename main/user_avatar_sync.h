@@ -20,8 +20,10 @@ class LvglImage;
 //
 //   * `SyncFromUrl(url)` — called from the main task after each OTA poll.
 //     No-ops if the cache already has this URL; otherwise spawns a
-//     detached FreeRTOS task that downloads the bytes, updates the cache,
-//     and swaps the slot via `display->SetUserAvatar`.
+//     detached FreeRTOS task that waits a few seconds (lets TLS/WebSocket/audio
+//     settle), downloads RGB565 into a BSS staging buffer (heap fragmented on C6),
+//     updates the cache, passes pixels with take_ownership=false to LVGL, and
+//     swaps the slot via `display->SetUserAvatar`.
 namespace UserAvatarSync {
 
 void SyncFromUrl(const std::string& url);

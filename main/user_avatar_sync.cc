@@ -5,6 +5,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <memory>
 #include <lvgl.h>
 
 #include "avatar_cache.h"
@@ -15,6 +16,10 @@
 #define TAG "UserAvatarSync"
 
 namespace {
+
+// Wait after OTA returns avatar_url before opening a second HTTPS fetch.
+// Lets TLS stacks / WebSocket / audio settle — avoids contention with CheckNewVersion().
+constexpr uint32_t kAvatarSyncDeferMs = 4000;
 
 // BadgeWatch avatar slot fixed dimensions. The server (OTA route) picks the
 // pixel layout per board — for waveshare-esp32-c6-lcd-1.69 it returns a raw
@@ -27,22 +32,28 @@ constexpr int kAvatarHeight = 172;
 constexpr int kAvatarStride = kAvatarWidth * 2; // RGB565: 2 bytes/pixel
 constexpr size_t kExpectedRgb565Size = kAvatarWidth * kAvatarHeight * 2;
 
+// After WiFi/TLS the heap often has enough total free SRAM but largest
+// contiguous block still below 59168 (fragmentation). OTA-downloaded RGB565 is
+// staged in BSS; LvglAllocatedImage(..., take_ownership=false) avoids heap_caps_free.
+// Single buffer: only one avatar_sync task at a time.
+alignas(4) static uint8_t s_avatar_rgb565[kExpectedRgb565Size];
+
 struct SyncCtx {
     std::string url;
 };
 
-std::unique_ptr<LvglAllocatedImage> WrapAsAllocatedImage(char* data, size_t size) {
+std::unique_ptr<LvglAllocatedImage> WrapAsAllocatedImage(char* data, size_t size,
+                                                         bool take_ownership = true) {
     return std::make_unique<LvglAllocatedImage>(
         data, size, kAvatarWidth, kAvatarHeight, kAvatarStride,
-        LV_COLOR_FORMAT_RGB565);
+        LV_COLOR_FORMAT_RGB565, take_ownership);
 }
 
 // HTTP GET → validate size → LvglAllocatedImage(data, size, w, h, stride,
 // RGB565) → AvatarCache::Save → display->SetUserAvatar. Runs on its own
 // FreeRTOS task so the OTA / boot path is not blocked, and so a slow link
 // does not stall LVGL.
-void DownloadTask(void* arg) {
-    std::unique_ptr<SyncCtx> ctx(static_cast<SyncCtx*>(arg));
+void DownloadTaskBody(std::unique_ptr<SyncCtx> ctx) {
     const std::string& url = ctx->url;
 
     auto* display = dynamic_cast<LvglDisplay*>(Board::GetInstance().GetDisplay());
@@ -51,6 +62,8 @@ void DownloadTask(void* arg) {
         vTaskDelete(nullptr);
         return;
     }
+
+    char* data = reinterpret_cast<char*>(s_avatar_rgb565);
 
     auto http = Board::GetInstance().GetNetwork()->CreateHttp(3);
     if (!http->Open("GET", url)) {
@@ -74,19 +87,12 @@ void DownloadTask(void* arg) {
         vTaskDelete(nullptr);
         return;
     }
-    char* data = static_cast<char*>(heap_caps_malloc(content_length, MALLOC_CAP_8BIT));
-    if (!data) {
-        ESP_LOGE(TAG, "OOM allocating %u bytes for avatar", (unsigned)content_length);
-        http->Close();
-        vTaskDelete(nullptr);
-        return;
-    }
+
     size_t total_read = 0;
     while (total_read < content_length) {
         int ret = http->Read(data + total_read, content_length - total_read);
         if (ret < 0) {
             ESP_LOGE(TAG, "Avatar download read error after %u bytes", (unsigned)total_read);
-            heap_caps_free(data);
             http->Close();
             vTaskDelete(nullptr);
             return;
@@ -98,7 +104,6 @@ void DownloadTask(void* arg) {
     if (total_read != content_length) {
         ESP_LOGE(TAG, "Short avatar download: got %u of %u bytes",
                  (unsigned)total_read, (unsigned)content_length);
-        heap_caps_free(data);
         vTaskDelete(nullptr);
         return;
     }
@@ -110,11 +115,17 @@ void DownloadTask(void* arg) {
     // skip the slot update because flash misbehaved.
     AvatarCache::Save(url, data, total_read);
 
-    auto image = WrapAsAllocatedImage(data, total_read);
+    auto image = WrapAsAllocatedImage(data, total_read, false);
     display->SetUserAvatar(std::move(image));
     ESP_LOGI(TAG, "Avatar slot updated");
 
     vTaskDelete(nullptr);
+}
+
+void DelayedAvatarSyncTask(void* arg) {
+    std::unique_ptr<SyncCtx> ctx(static_cast<SyncCtx*>(arg));
+    vTaskDelay(pdMS_TO_TICKS(kAvatarSyncDeferMs));
+    DownloadTaskBody(std::move(ctx));
 }
 
 } // namespace
@@ -133,8 +144,9 @@ void SyncFromUrl(const std::string& url) {
     }
 
     auto* ctx = new SyncCtx{ url };
-    BaseType_t ok = xTaskCreate(&DownloadTask, "avatar_sync", 6 * 1024, ctx,
-                                tskIDLE_PRIORITY + 1, nullptr);
+    BaseType_t ok =
+        xTaskCreate(&DelayedAvatarSyncTask, "avatar_sync", 6 * 1024, ctx,
+                    tskIDLE_PRIORITY + 1, nullptr);
     if (ok != pdPASS) {
         ESP_LOGE(TAG, "Failed to spawn avatar_sync task");
         delete ctx;
@@ -149,7 +161,7 @@ std::unique_ptr<LvglImage> LoadCachedImage() {
         heap_caps_free(cached.data);
         return nullptr;
     }
-    return WrapAsAllocatedImage(cached.data, cached.size);
+    return WrapAsAllocatedImage(cached.data, cached.size, true);
 }
 
 } // namespace UserAvatarSync

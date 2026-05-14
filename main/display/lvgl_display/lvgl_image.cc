@@ -34,7 +34,8 @@ LvglCBinImage::~LvglCBinImage() {
     }
 }
 
-LvglAllocatedImage::LvglAllocatedImage(void* data, size_t size) {
+LvglAllocatedImage::LvglAllocatedImage(void* data, size_t size)
+    : take_ownership_(true) {
     bzero(&image_dsc_, sizeof(image_dsc_));
     image_dsc_.data_size = size;
     image_dsc_.data = static_cast<uint8_t*>(data);
@@ -45,7 +46,9 @@ LvglAllocatedImage::LvglAllocatedImage(void* data, size_t size) {
     }
 }
 
-LvglAllocatedImage::LvglAllocatedImage(void* data, size_t size, int width, int height, int stride, int color_format) {
+LvglAllocatedImage::LvglAllocatedImage(void* data, size_t size, int width, int height,
+                                       int stride, int color_format, bool take_ownership)
+    : take_ownership_(take_ownership) {
     bzero(&image_dsc_, sizeof(image_dsc_));
     image_dsc_.data_size = size;
     image_dsc_.data = static_cast<uint8_t*>(data);
@@ -57,7 +60,7 @@ LvglAllocatedImage::LvglAllocatedImage(void* data, size_t size, int width, int h
 }
 
 LvglAllocatedImage::~LvglAllocatedImage() {
-    if (image_dsc_.data) {
+    if (take_ownership_ && image_dsc_.data) {
         heap_caps_free((void*)image_dsc_.data);
         image_dsc_.data = nullptr;
     }

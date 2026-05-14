@@ -44,10 +44,14 @@ private:
 class LvglAllocatedImage : public LvglImage {
 public:
     LvglAllocatedImage(void* data, size_t size);
-    LvglAllocatedImage(void* data, size_t size, int width, int height, int stride, int color_format);
+    // When take_ownership is false, destructor does not heap_caps_free(data)
+    // (caller backs pixels with static storage or flash-mapped memory).
+    LvglAllocatedImage(void* data, size_t size, int width, int height, int stride,
+                       int color_format, bool take_ownership = true);
     virtual ~LvglAllocatedImage();
     virtual const lv_img_dsc_t* image_dsc() const override { return &image_dsc_; }
 
 private:
     lv_img_dsc_t image_dsc_;
+    bool take_ownership_ = true;
 };
