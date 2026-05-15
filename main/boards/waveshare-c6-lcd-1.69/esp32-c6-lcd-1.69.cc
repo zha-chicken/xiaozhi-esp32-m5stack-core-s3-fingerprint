@@ -925,14 +925,6 @@ private:
         const char* s = text ? text : "";
         const int32_t max_w = LV_HOR_RES - 32;
 
-        if (kLightweightBadgeUi) {
-            lv_obj_set_width(chat_message_label_, max_w);
-            lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_DOT);
-            lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0);
-            lv_label_set_text(chat_message_label_, s);
-            return;
-        }
-
         lv_point_t size = {0, 0};
         if (*s) {
             lv_text_get_size(&size, s, &font_puhui_16_4, 0, 0,

@@ -62,6 +62,30 @@ bool Load(Loaded& out) {
     return true;
 }
 
+bool LoadInto(char* data, size_t capacity, Loaded& out) {
+    auto* part = GetPartition();
+    if (!part) {
+        ESP_LOGW(TAG, "avatar partition not found");
+        return false;
+    }
+    Header hdr;
+    if (!ReadHeader(part, hdr)) return false;
+    if (hdr.size > capacity) {
+        ESP_LOGE(TAG, "cached avatar too large (%u > %u)",
+                 (unsigned)hdr.size, (unsigned)capacity);
+        return false;
+    }
+    if (esp_partition_read(part, sizeof(Header), data, hdr.size) != ESP_OK) {
+        ESP_LOGE(TAG, "read body failed");
+        return false;
+    }
+    out.data = data;
+    out.size = hdr.size;
+    out.url.assign(hdr.url);
+    ESP_LOGI(TAG, "Loaded %u bytes into static buffer for %s", (unsigned)hdr.size, hdr.url);
+    return true;
+}
+
 bool Save(const std::string& url, const char* data, size_t size) {
     auto* part = GetPartition();
     if (!part) {

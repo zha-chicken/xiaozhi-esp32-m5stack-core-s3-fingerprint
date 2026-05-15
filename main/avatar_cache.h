@@ -48,6 +48,10 @@ bool MatchesCachedUrl(const std::string& url);
 // (caller owns out.data), false on miss / corruption / OOM.
 bool Load(Loaded& out);
 
+// Pull the cached avatar into caller-owned storage. Use this on boards without
+// PSRAM so the displayed avatar can live in a static buffer instead of heap.
+bool LoadInto(char* data, size_t capacity, Loaded& out);
+
 // Replace cache contents atomically. Returns false on flash error or
 // oversized payload / URL.
 bool Save(const std::string& url, const char* data, size_t size);
