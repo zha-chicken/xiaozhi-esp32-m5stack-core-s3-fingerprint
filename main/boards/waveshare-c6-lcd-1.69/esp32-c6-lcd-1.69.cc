@@ -20,6 +20,7 @@
 #include "iot_button.h"
 #include "power_manager.h"
 #include "power_save_timer.h"
+#include <sdkconfig.h>
 #include <esp_app_desc.h>
 #include <cmath>
 #include <ctime>
@@ -40,6 +41,12 @@ extern "C" const lv_img_dsc_t bg_tile_4x4;
 extern "C" const lv_font_t font_puhui_16_4;
 
 #define TAG "waveshare_lcd_1_69"
+
+#if CONFIG_IDF_TARGET_ESP32C6
+constexpr bool kLightweightBadgeUi = true;
+#else
+constexpr bool kLightweightBadgeUi = false;
+#endif
 
 /* ─────────────────────────────────────────────────────────────────────
  * Hao Lab badge-watch layout for the Waveshare ESP32-C6-LCD-1.69 (240×280
@@ -507,6 +514,12 @@ private:
         lv_obj_set_style_bg_color(halo_, lv_color_hex(color), 0);
         lv_anim_delete(halo_, HaloOpaCb);
 
+        if (kLightweightBadgeUi) {
+            lv_obj_set_style_bg_opa(halo_, static_cast<lv_opa_t>((opa_min + opa_max) / 2), 0);
+            halo_anim_running_ = false;
+            return;
+        }
+
         lv_anim_init(&halo_anim_);
         lv_anim_set_var(&halo_anim_, halo_);
         lv_anim_set_exec_cb(&halo_anim_, HaloOpaCb);
@@ -753,6 +766,14 @@ private:
 
         // Helper: spinner (1.2 s rotation, coral arc) sized to 26 px.
         auto add_spinner = [](lv_obj_t* parent) -> lv_obj_t* {
+            if (kLightweightBadgeUi) {
+                lv_obj_t* s = lv_label_create(parent);
+                lv_label_set_text(s, "...");
+                lv_obj_set_style_text_font(s, &lv_font_montserrat_28, 0);
+                lv_obj_set_style_text_color(s, lv_color_hex(COLOR_CORAL), 0);
+                return s;
+            }
+
             lv_obj_t* s = lv_spinner_create(parent);
             lv_obj_set_size(s, 26, 26);
             lv_spinner_set_anim_params(s, 1200, 60);
@@ -903,6 +924,15 @@ private:
         if (!chat_message_label_) return;
         const char* s = text ? text : "";
         const int32_t max_w = LV_HOR_RES - 32;
+
+        if (kLightweightBadgeUi) {
+            lv_obj_set_width(chat_message_label_, max_w);
+            lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_DOT);
+            lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_text(chat_message_label_, s);
+            return;
+        }
+
         lv_point_t size = {0, 0};
         if (*s) {
             lv_text_get_size(&size, s, &font_puhui_16_4, 0, 0,
@@ -992,14 +1022,14 @@ private:
                 // otherwise we'd flash the baked default while UserAvatarSync
                 // is still downloading. The boot layer (with spinner) is the
                 // honest "still preparing" surface.
-                ShowBadgeLayer(user_avatar_ready_ ? kBfAvatar : kBfBoot);
+                ShowBadgeLayer((user_avatar_ready_ || kLightweightBadgeUi) ? kBfAvatar : kBfBoot);
                 UpdateHalo(COLOR_SAGE, 140, 255, 900);     // 55 → 100 %
                 SetDialMode(kDialClock);
                 SetTickerText("正在接通…");
                 break;
             case kDeviceStateIdle:
             case kDeviceStateUnknown:
-                ShowBadgeLayer(user_avatar_ready_ ? kBfAvatar : kBfBoot);
+                ShowBadgeLayer((user_avatar_ready_ || kLightweightBadgeUi) ? kBfAvatar : kBfBoot);
                 // Coral is our brand red, always-breathing — no gray ring.
                 UpdateHalo(COLOR_CORAL, 51, 140, 5000);    // 20 → 55 %, slow & calm
                 SetDialMode(kDialClock);

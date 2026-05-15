@@ -278,6 +278,7 @@ void Application::ToggleChatState() {
         Schedule([this]() {
             if (!protocol_->IsAudioChannelOpened()) {
                 SetDeviceState(kDeviceStateConnecting);
+                Board::GetInstance().SetPowerSaveMode(false);
                 if (!protocol_->OpenAudioChannel()) {
                     return;
                 }
@@ -315,6 +316,7 @@ void Application::StartListening() {
         Schedule([this]() {
             if (!protocol_->IsAudioChannelOpened()) {
                 SetDeviceState(kDeviceStateConnecting);
+                Board::GetInstance().SetPowerSaveMode(false);
                 if (!protocol_->OpenAudioChannel()) {
                     return;
                 }
@@ -632,6 +634,7 @@ void Application::OnWakeWordDetected() {
 
         if (!protocol_->IsAudioChannelOpened()) {
             SetDeviceState(kDeviceStateConnecting);
+            Board::GetInstance().SetPowerSaveMode(false);
             if (!protocol_->OpenAudioChannel()) {
                 audio_service_.EnableWakeWordDetection(true);
                 return;
@@ -807,6 +810,7 @@ void Application::WakeWordInvoke(const std::string& wake_word) {
 
         if (!protocol_->IsAudioChannelOpened()) {
             SetDeviceState(kDeviceStateConnecting);
+            Board::GetInstance().SetPowerSaveMode(false);
             if (!protocol_->OpenAudioChannel()) {
                 audio_service_.EnableWakeWordDetection(true);
                 return;

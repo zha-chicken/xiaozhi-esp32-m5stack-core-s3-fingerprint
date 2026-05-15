@@ -1,5 +1,6 @@
 #include "user_avatar_sync.h"
 
+#include <sdkconfig.h>
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -31,6 +32,17 @@ constexpr int kAvatarWidth = 172;
 constexpr int kAvatarHeight = 172;
 constexpr int kAvatarStride = kAvatarWidth * 2; // RGB565: 2 bytes/pixel
 constexpr size_t kExpectedRgb565Size = kAvatarWidth * kAvatarHeight * 2;
+
+// ESP32-C6 has no PSRAM and the custom LVGL badge UI already runs near the
+// limit. Keep C6 on the built-in avatar path: no boot cache load and no
+// post-OTA avatar download. Stronger boards can keep the dynamic avatar path.
+#if CONFIG_IDF_TARGET_ESP32C6
+constexpr bool kAvatarSyncEnabled = false;
+constexpr bool kPersistentAvatarCacheEnabled = false;
+#else
+constexpr bool kAvatarSyncEnabled = true;
+constexpr bool kPersistentAvatarCacheEnabled = true;
+#endif
 
 // After WiFi/TLS the heap often has enough total free SRAM but largest
 // contiguous block still below 59168 (fragmentation). OTA-downloaded RGB565 is
@@ -110,10 +122,14 @@ void DownloadTaskBody(std::unique_ptr<SyncCtx> ctx) {
     ESP_LOGI(TAG, "Downloaded %u avatar bytes (RGB565) from %s",
              (unsigned)total_read, url.c_str());
 
-    // Persist before swapping. A failed Save() is logged but non-fatal —
-    // we'd rather show the new avatar now and re-download next boot than
-    // skip the slot update because flash misbehaved.
-    AvatarCache::Save(url, data, total_read);
+    if (kPersistentAvatarCacheEnabled) {
+        // Persist before swapping. A failed Save() is logged but non-fatal —
+        // we'd rather show the new avatar now and re-download next boot than
+        // skip the slot update because flash misbehaved.
+        AvatarCache::Save(url, data, total_read);
+    } else {
+        ESP_LOGI(TAG, "Persistent avatar cache disabled; using in-memory avatar only");
+    }
 
     auto image = WrapAsAllocatedImage(data, total_read, false);
     display->SetUserAvatar(std::move(image));
@@ -135,10 +151,15 @@ namespace UserAvatarSync {
 void SyncFromUrl(const std::string& url) {
     if (url.empty()) return;
 
-    // Boot-time LoadCachedImage() already populated the slot with the
-    // matching cached bytes, so re-downloading would be wasted RAM, flash
-    // wear, and bandwidth. Compare and bail.
-    if (AvatarCache::MatchesCachedUrl(url)) {
+    if (!kAvatarSyncEnabled) {
+        ESP_LOGW(TAG, "Avatar sync disabled on ESP32-C6; using built-in avatar");
+        return;
+    }
+
+    // Boot-time LoadCachedImage() already populated the slot with the matching
+    // cached bytes, so re-downloading would be wasted RAM, flash wear, and
+    // bandwidth. Compare and bail only on boards where persistence is enabled.
+    if (kPersistentAvatarCacheEnabled && AvatarCache::MatchesCachedUrl(url)) {
         ESP_LOGI(TAG, "Avatar cache already matches OTA URL, skipping download");
         return;
     }
@@ -154,6 +175,8 @@ void SyncFromUrl(const std::string& url) {
 }
 
 std::unique_ptr<LvglImage> LoadCachedImage() {
+    if (!kPersistentAvatarCacheEnabled) return nullptr;
+
     AvatarCache::Loaded cached;
     if (!AvatarCache::Load(cached)) return nullptr;
     if (cached.size != kExpectedRgb565Size) {
