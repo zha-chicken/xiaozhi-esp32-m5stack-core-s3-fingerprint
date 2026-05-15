@@ -3,6 +3,7 @@
 #include <sdkconfig.h>
 #include <esp_log.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -81,12 +82,14 @@ void RestorePowerSaveIfIdle(Board& board) {
 void DownloadTaskBody(std::unique_ptr<SyncCtx> ctx) {
     const std::string& url = ctx->url;
 
+#if !CONFIG_IDF_TARGET_ESP32C6
     auto* display = dynamic_cast<LvglDisplay*>(Board::GetInstance().GetDisplay());
     if (!display) {
         ESP_LOGW(TAG, "No LvglDisplay available, skipping avatar sync");
         vTaskDelete(nullptr);
         return;
     }
+#endif
 
     char* data = reinterpret_cast<char*>(s_avatar_rgb565);
 
@@ -147,12 +150,18 @@ void DownloadTaskBody(std::unique_ptr<SyncCtx> ctx) {
     // user sees the fresh avatar now and the next OTA check can retry storage.
     AvatarCache::Save(url, data, total_read);
 
+#if CONFIG_IDF_TARGET_ESP32C6
+    ESP_LOGI(TAG, "Avatar cache updated; restarting to apply on ESP32-C6");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+#else
     auto image = WrapAsAllocatedImage(data, total_read, false);
     display->SetUserAvatar(std::move(image));
     ESP_LOGI(TAG, "Avatar slot updated");
 
     RestorePowerSaveIfIdle(board);
     vTaskDelete(nullptr);
+#endif
 }
 
 void DelayedAvatarSyncTask(void* arg) {
