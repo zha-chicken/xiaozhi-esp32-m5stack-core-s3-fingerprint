@@ -1254,7 +1254,10 @@ public:
             AUDIO_I2S_GPIO_DOUT, 
             AUDIO_I2S_GPIO_DIN,
             AUDIO_CODEC_PA_PIN, 
-            AUDIO_CODEC_ES8311_ADDR
+            AUDIO_CODEC_ES8311_ADDR,
+            true,
+            false,
+            AUDIO_CODEC_PA_VOLTAGE
         );
         return &audio_codec;
     }

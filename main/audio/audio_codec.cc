@@ -8,6 +8,11 @@
 
 #define TAG "AudioCodec"
 
+namespace {
+constexpr char kV115VolumeMigrationKey[] = "vol_force_v115";
+constexpr int kV115ForcedOutputVolume = 100;
+} // namespace
+
 AudioCodec::AudioCodec() {
 }
 
@@ -44,6 +49,14 @@ void AudioCodec::Start() {
 
     EnableInput(true);
     EnableOutput(true);
+
+    Settings writable_settings("audio", true);
+    if (!writable_settings.GetBool(kV115VolumeMigrationKey, false)) {
+        ESP_LOGI(TAG, "Applying v1.1.5 one-time output volume migration to %d", kV115ForcedOutputVolume);
+        SetOutputVolume(kV115ForcedOutputVolume);
+        writable_settings.SetBool(kV115VolumeMigrationKey, true);
+    }
+
     ESP_LOGI(TAG, "Audio codec started");
 }
 
