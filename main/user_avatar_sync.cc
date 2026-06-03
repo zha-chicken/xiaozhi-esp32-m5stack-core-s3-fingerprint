@@ -30,14 +30,23 @@ constexpr int kMaintenanceMaxAttempts = 24;
 constexpr uint32_t kAvatarSyncDeferMs = 4000;
 #endif
 
-// BadgeWatch avatar slot fixed dimensions. The server (OTA route) picks the
-// pixel layout per board — for waveshare-esp32-c6-lcd-1.69 it returns a raw
-// little-endian RGB565 byte stream sized for these dimensions, sidestepping
-// LVGL lodepng (which always decodes to ARGB8888 = 172×172×4 ≈ 118 KB and
-// would OOM on the C6's ~112 KB free SRAM). See
-// docs/research/firmware-mods/avatar-rgb565-pipeline.md.
-constexpr int kAvatarWidth = 172;
+// BadgeWatch avatar slot fixed dimensions. MUST equal the board's badge
+// diameter (BadgeWatchConfig.badge_radius*2) AND the platform-side
+// DEVICE_AVATAR_WIDTH / ALLOWED_SIZES for that board. The server (OTA route)
+// returns a raw little-endian RGB565 byte stream sized for these dimensions,
+// sidestepping LVGL lodepng (which always decodes to ARGB8888 and would OOM
+// on SRAM-tight boards). See docs/research/firmware-mods/avatar-rgb565-pipeline.md.
+//
+// Per-target compile-time constant (NOT a runtime display query): the boot
+// cache-load runs during display construction, before Board::GetDisplay() is
+// set, so we cannot ask the display for its slot size.
+#if CONFIG_IDF_TARGET_ESP32C6
+constexpr int kAvatarWidth = 172;   // waveshare-c6-lcd-1.69 badge slot
 constexpr int kAvatarHeight = 172;
+#else
+constexpr int kAvatarWidth = 220;   // m5stack-core-s3 badge slot; must match
+constexpr int kAvatarHeight = 220;  // BadgeWatchConfig badge_radius*2 + platform DEVICE_AVATAR_WIDTH
+#endif
 constexpr int kAvatarStride = kAvatarWidth * 2; // RGB565: 2 bytes/pixel
 constexpr size_t kExpectedRgb565Size = kAvatarWidth * kAvatarHeight * 2;
 
@@ -53,10 +62,16 @@ constexpr bool kAvatarMaintenanceWindowEnabled = false;
 #endif
 
 // After WiFi/TLS the heap often has enough total free SRAM but largest
-// contiguous block still below 59168 (fragmentation). OTA-downloaded RGB565 is
-// staged in BSS; LvglAllocatedImage(..., take_ownership=false) avoids heap_caps_free.
+// contiguous block still below the slot size (fragmentation). On the C6 (no
+// PSRAM) the OTA-downloaded RGB565 is staged in BSS;
+// LvglAllocatedImage(..., take_ownership=false) avoids heap_caps_free.
 // Single buffer: only one avatar_sync task at a time.
+//
+// Non-C6 boards (e.g. CoreS3) have PSRAM and allocate the buffer from PSRAM in
+// DownloadTaskBody instead, so the big 220×220 BSS buffer is NOT compiled in.
+#if CONFIG_IDF_TARGET_ESP32C6
 alignas(4) static uint8_t s_avatar_rgb565[kExpectedRgb565Size];
+#endif
 
 struct SyncCtx {
     std::string url;
@@ -91,8 +106,6 @@ void DownloadTaskBody(std::unique_ptr<SyncCtx> ctx) {
     }
 #endif
 
-    char* data = reinterpret_cast<char*>(s_avatar_rgb565);
-
     auto& board = Board::GetInstance();
     board.SetPowerSaveMode(false);
 
@@ -122,12 +135,39 @@ void DownloadTaskBody(std::unique_ptr<SyncCtx> ctx) {
         return;
     }
 
+    // Acquire the RGB565 staging buffer now that the size is validated.
+    //   C6   : fixed BSS buffer (no PSRAM); never freed (single-shot, then restart).
+    //   else : PSRAM (CoreS3 etc.); ownership handed to LvglAllocatedImage so it
+    //          is heap_caps_free'd when the avatar slot is later replaced.
+#if CONFIG_IDF_TARGET_ESP32C6
+    char* data = reinterpret_cast<char*>(s_avatar_rgb565);
+#else
+    char* data = reinterpret_cast<char*>(
+        heap_caps_malloc(kExpectedRgb565Size, MALLOC_CAP_SPIRAM));
+    if (!data) {
+        ESP_LOGE(TAG, "OOM allocating %u bytes (PSRAM) for avatar",
+                 (unsigned)kExpectedRgb565Size);
+        http->Close();
+        RestorePowerSaveIfIdle(board);
+        vTaskDelete(nullptr);
+        return;
+    }
+#endif
+    // Free the staging buffer on any post-allocation error path. No-op on C6
+    // (the BSS buffer is not heap-owned).
+    auto release_buffer = [&]() {
+#if !CONFIG_IDF_TARGET_ESP32C6
+        heap_caps_free(data);
+#endif
+    };
+
     size_t total_read = 0;
     while (total_read < content_length) {
         int ret = http->Read(data + total_read, content_length - total_read);
         if (ret < 0) {
             ESP_LOGE(TAG, "Avatar download read error after %u bytes", (unsigned)total_read);
             http->Close();
+            release_buffer();
             RestorePowerSaveIfIdle(board);
             vTaskDelete(nullptr);
             return;
@@ -139,6 +179,7 @@ void DownloadTaskBody(std::unique_ptr<SyncCtx> ctx) {
     if (total_read != content_length) {
         ESP_LOGE(TAG, "Short avatar download: got %u of %u bytes",
                  (unsigned)total_read, (unsigned)content_length);
+        release_buffer();
         RestorePowerSaveIfIdle(board);
         vTaskDelete(nullptr);
         return;
@@ -155,7 +196,9 @@ void DownloadTaskBody(std::unique_ptr<SyncCtx> ctx) {
     vTaskDelay(pdMS_TO_TICKS(1000));
     esp_restart();
 #else
-    auto image = WrapAsAllocatedImage(data, total_read, false);
+    // take_ownership=true: LvglAllocatedImage now owns the PSRAM buffer and
+    // heap_caps_free's it when the slot is replaced (or the image is dropped).
+    auto image = WrapAsAllocatedImage(data, total_read, true);
     display->SetUserAvatar(std::move(image));
     ESP_LOGI(TAG, "Avatar slot updated");
 
@@ -215,10 +258,16 @@ void SyncFromUrl(const std::string& url) {
 
 std::unique_ptr<LvglImage> LoadCachedImage() {
     AvatarCache::Loaded cached;
+    // The s_avatar_rgb565 BSS buffer only exists on C6 (see its #if guard);
+    // on PSRAM boards LoadInto is never used, so reference it only under the
+    // same guard so the symbol is not required on non-C6 builds.
+#if CONFIG_IDF_TARGET_ESP32C6
     if (kStaticAvatarBufferEnabled) {
         char* data = reinterpret_cast<char*>(s_avatar_rgb565);
         if (!AvatarCache::LoadInto(data, kExpectedRgb565Size, cached)) return nullptr;
-    } else {
+    } else
+#endif
+    {
         if (!AvatarCache::Load(cached)) return nullptr;
     }
     if (cached.size != kExpectedRgb565Size) {

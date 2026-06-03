@@ -564,6 +564,17 @@ else()
     list(APPEND SOURCES "audio/wake_words/esp_wake_word.cc")
 endif()
 
+# Hao Lab badge-watch GUI: only the boards that construct BadgeWatchDisplay
+# compile it. It hard-references lv_font_montserrat_28/36/44 + lv_spinner_create
+# (the spinner is behind a runtime `if`, not `if constexpr`, so it is always
+# compiled), all LVGL Kconfig-gated (default n). Those boards enable the fonts +
+# spinner in their config.json sdkconfig_append; other boards must NOT compile
+# this file or they'd require those symbols. Future BadgeWatch boards opt in by
+# adding their CONFIG_BOARD_TYPE_* here.
+if(CONFIG_BOARD_TYPE_WAVESHARE_C6_LCD_1_69 OR CONFIG_BOARD_TYPE_M5STACK_CORE_S3)
+    list(APPEND SOURCES "display/badge_watch_display.cc")
+endif()
+
 # Select language directory according to Kconfig
 if(CONFIG_LANGUAGE_ZH_CN)
     set(LANG_DIR "zh-CN")

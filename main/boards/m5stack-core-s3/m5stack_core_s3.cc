@@ -1,6 +1,7 @@
 #include "wifi_board.h"
 #include "cores3_audio_codec.h"
 #include "display/lcd_display.h"
+#include "display/badge_watch_display.h"
 #include "application.h"
 #include "config.h"
 #include "power_save_timer.h"
@@ -349,8 +350,30 @@ private:
         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
 
-        display_ = new SpiLcdDisplay(panel_io, panel,
-                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
+        // Hao Lab badge-watch GUI (shared BadgeWatchDisplay). First-pass
+        // CoreS3 config — radii on-hardware-tunable later; the avatar slot
+        // diameter (badge_radius*2 = 220) is a LOCKED contract shared with
+        // user_avatar_sync.cc kAvatarWidth/Height and the platform
+        // DEVICE_AVATAR_WIDTH / ALLOWED_SIZES. CoreS3 has PSRAM + a full
+        // (non-lightweight) badge UI.
+        BadgeWatchConfig badge_cfg = {
+            .badge_radius      = 110,   // → avatar slot 220×220 (LOCKED, see F4)
+            .ring_radius       = 116,
+            .halo_radius       = 118,
+            .center_y_offset   = 0,
+            .tick_len_cardinal = 8,     // ~1.28× C6
+            .tick_len_major    = 5,
+            .tick_len_minor    = 3,
+            .hour_mark_w       = 5,
+            .hour_mark_h       = 28,
+            .show_ticker       = false, // fill-height circle leaves no room
+            .show_version_label = true, // keep the inherited bottom version label
+            .default_avatar    = nullptr, // no baked default; spinner holds
+            .bg_tile           = nullptr, // solid cream first pass
+        };
+        display_ = new BadgeWatchDisplay(panel_io, panel,
+                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,
+                                    badge_cfg);
     }
 
      void InitializeCamera() {
