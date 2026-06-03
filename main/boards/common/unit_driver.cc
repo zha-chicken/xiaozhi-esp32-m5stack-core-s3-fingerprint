@@ -16,7 +16,15 @@ std::vector<uint8_t> UnitScanAndRegister(i2c_master_bus_handle_t bus, McpServer&
     auto& catalog = UnitCatalog::GetInstance();
     int known = 0;
     for (uint8_t addr = 0x08; addr <= 0x77; addr++) {  // valid 7-bit I2C range
-        esp_err_t ret = i2c_master_probe(bus, addr, pdMS_TO_TICKS(50));
+        // Probe with a generous 200ms timeout + one retry. On a bus with only the
+        // ESP32 internal weak pull-ups, a present device's ACK can be slow to
+        // detect: a 50ms probe missed a PCA9685 that the DIAG then read fine at
+        // 200ms (MODE1=0x11). Absent addresses still NACK fast, so the scan stays
+        // ~1-2s. (ADR 0010 bring-up finding, 2026-06-03.)
+        esp_err_t ret = ESP_FAIL;
+        for (int attempt = 0; attempt < 2 && ret != ESP_OK; attempt++) {
+            ret = i2c_master_probe(bus, addr, pdMS_TO_TICKS(200));
+        }
         if (ret != ESP_OK) {
             continue;
         }

@@ -210,7 +210,9 @@ private:
         }
         std::vector<uint8_t> now;
         for (uint8_t addr = 0x08; addr <= 0x77; addr++) {
-            if (i2c_master_probe(port_a_bus_, addr, pdMS_TO_TICKS(50)) == ESP_OK) {
+            // 200ms to match UnitScanAndRegister: weak Port A pull-ups make a
+            // present device's ACK slow; 50ms can miss it (ADR 0010 bring-up).
+            if (i2c_master_probe(port_a_bus_, addr, pdMS_TO_TICKS(200)) == ESP_OK) {
                 now.push_back(addr);
             }
         }
