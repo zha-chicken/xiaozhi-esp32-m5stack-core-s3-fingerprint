@@ -6,14 +6,18 @@
 #include "power_save_timer.h"
 #include "i2c_device.h"
 #include "axp2101.h"
+#include "mcp_server.h"
+#include "unit_driver.h"
 
 #include <esp_log.h>
+#include <esp_system.h>
 #include <driver/i2c_master.h>
 #include <wifi_station.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_ili9341.h>
 #include <esp_timer.h>
+#include <vector>
 #include "esp32_camera.h"
 
 #define TAG "M5StackCoreS3Board"
@@ -120,6 +124,8 @@ private:
 class M5StackCoreS3Board : public WifiBoard {
 private:
     i2c_master_bus_handle_t i2c_bus_;
+    i2c_master_bus_handle_t port_a_bus_ = nullptr;  // external Grove Port A (ADR 0010)
+    std::vector<uint8_t> port_a_boot_addrs_;        // addresses seen at boot scan
     Pmic* pmic_;
     Aw9523* aw9523_;
     Ft6336* ft6336_;
@@ -159,6 +165,61 @@ private:
             },
         };
         ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &i2c_bus_));
+    }
+
+    // ADR 0010: bring up the external Grove Port A as a SECOND, independent I2C
+    // bus on controller 0 (ESP32-S3 has 2). Mirrors InitializeI2c() but on the
+    // Port A pins. Never touches the internal bus on controller 1.
+    void InitializePortAI2c() {
+        if (port_a_bus_ != nullptr) {
+            return;  // already up
+        }
+        i2c_master_bus_config_t i2c_bus_cfg = {
+            .i2c_port = (i2c_port_t)0,
+            .sda_io_num = PORT_A_I2C_SDA_PIN,
+            .scl_io_num = PORT_A_I2C_SCL_PIN,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .glitch_ignore_cnt = 7,
+            .intr_priority = 0,
+            .trans_queue_depth = 0,
+            .flags = {
+                .enable_internal_pullup = 1,
+            },
+        };
+        ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &port_a_bus_));
+        ESP_LOGI(TAG, "Port A I2C bus up (port 0, SDA=%d SCL=%d)",
+                 PORT_A_I2C_SDA_PIN, PORT_A_I2C_SCL_PIN);
+    }
+
+    // ADR 0010 Phase 1: scan Port A and register any known Unit's MCP tools.
+    // Called at the end of the constructor (after the internal init + display).
+    void InitializeTools() {
+        InitializePortAI2c();
+        auto& mcp_server = McpServer::GetInstance();
+        port_a_boot_addrs_ = UnitScanAndRegister(port_a_bus_, mcp_server);
+    }
+
+    // ADR 0010: no per-tool removal exists in mcp_server. To reflect a Unit being
+    // plugged/unplugged we re-probe Port A; if the detected address set changed
+    // vs boot, restart so a fresh boot re-scans and the platform re-pulls
+    // tools/list on reconnect. Currently callable on demand.
+    // TODO(ADR-0010): wire a rescan trigger (e.g. touch long-press).
+    void RescanPortA() {
+        if (port_a_bus_ == nullptr) {
+            return;
+        }
+        std::vector<uint8_t> now;
+        for (uint8_t addr = 0x08; addr <= 0x77; addr++) {
+            if (i2c_master_probe(port_a_bus_, addr, pdMS_TO_TICKS(50)) == ESP_OK) {
+                now.push_back(addr);
+            }
+        }
+        if (now != port_a_boot_addrs_) {
+            ESP_LOGW(TAG, "Port A topology changed (%d -> %d devices); restarting to re-scan",
+                     (int)port_a_boot_addrs_.size(), (int)now.size());
+            vTaskDelay(pdMS_TO_TICKS(100));
+            esp_restart();
+        }
     }
 
     void I2cDetect() {
@@ -343,6 +404,7 @@ public:
         InitializeCamera();
         InitializeFt6336TouchPad();
         GetBacklight()->RestoreBrightness();
+        InitializeTools();  // ADR 0010: scan Port A, register Unit MCP tools
     }
 
     virtual AudioCodec* GetAudioCodec() override {

@@ -20,6 +20,12 @@
 #define AUDIO_CODEC_AW88298_ADDR AW88298_CODEC_DEFAULT_ADDR
 #define AUDIO_CODEC_ES7210_ADDR  ES7210_CODEC_DEFAULT_ADDR
 
+// External Grove Port A I2C bus (ADR 0010 — modular Unit auto-discovery).
+// CoreS3 Port A silk: SDA = G2, SCL = G1. Physically separate from the internal
+// bus (SDA=G12/SCL=G11) so external Units can never collide with onboard chips.
+#define PORT_A_I2C_SDA_PIN  GPIO_NUM_2
+#define PORT_A_I2C_SCL_PIN  GPIO_NUM_1
+
 #define BUILTIN_LED_GPIO        GPIO_NUM_NC
 #define BOOT_BUTTON_GPIO        GPIO_NUM_0
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_NC
