@@ -571,8 +571,15 @@ endif()
 # spinner in their config.json sdkconfig_append; other boards must NOT compile
 # this file or they'd require those symbols. Future BadgeWatch boards opt in by
 # adding their CONFIG_BOARD_TYPE_* here.
+#
+# avatar_assets.c holds the baked badge assets (avatar_a 172×172 RGB565 +
+# bg_tile_4x4). It used to live under boards/waveshare-c6-lcd-1.69/ and be
+# picked up by that board's source glob; it is now shared so CoreS3 reuses the
+# same baked cat + grid. Only one board builds at a time → one definition links,
+# no duplicate symbol. Keep it on the SAME opt-in set as the GUI.
 if(CONFIG_BOARD_TYPE_WAVESHARE_C6_LCD_1_69 OR CONFIG_BOARD_TYPE_M5STACK_CORE_S3)
     list(APPEND SOURCES "display/badge_watch_display.cc")
+    list(APPEND SOURCES "display/avatar_assets.c")
 endif()
 
 # Select language directory according to Kconfig

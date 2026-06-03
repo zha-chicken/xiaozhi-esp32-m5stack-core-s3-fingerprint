@@ -21,6 +21,13 @@
 #include <vector>
 #include "esp32_camera.h"
 
+// Baked badge assets shared with the C6 board (definitions in the relocated
+// display/avatar_assets.c, compiled for C6 || CoreS3 — see main/CMakeLists.txt).
+// avatar_a is 172×172 RGB565 = the CoreS3 badge slot; bg_tile_4x4 is the grid
+// texture. Only one board is built at a time, so a single definition links.
+extern "C" const lv_img_dsc_t avatar_a;
+extern "C" const lv_img_dsc_t bg_tile_4x4;
+
 #define TAG "M5StackCoreS3Board"
 
 class Pmic : public Axp2101 {
@@ -350,26 +357,26 @@ private:
         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
 
-        // Hao Lab badge-watch GUI (shared BadgeWatchDisplay). First-pass
-        // CoreS3 config — radii on-hardware-tunable later; the avatar slot
-        // diameter (badge_radius*2 = 220) is a LOCKED contract shared with
-        // user_avatar_sync.cc kAvatarWidth/Height and the platform
-        // DEVICE_AVATAR_WIDTH / ALLOWED_SIZES. CoreS3 has PSRAM + a full
-        // (non-lightweight) badge UI.
+        // Hao Lab badge-watch GUI (shared BadgeWatchDisplay). CoreS3 reuses
+        // the C6 badge composition byte-for-byte: same circle/dial/halo
+        // geometry, same ticker, same baked assets (avatar_a 172×172 + the
+        // 4×4 grid tile, now compiled for both boards — see CMakeLists).
+        // Corners/ticker/centering derive from LV_HOR_RES/VER_RES so they
+        // auto-adapt to the 320×240 panel; no per-corner work.
         BadgeWatchConfig badge_cfg = {
-            .badge_radius      = 110,   // → avatar slot 220×220 (LOCKED, see F4)
-            .ring_radius       = 116,
-            .halo_radius       = 118,
-            .center_y_offset   = 0,
-            .tick_len_cardinal = 8,     // ~1.28× C6
-            .tick_len_major    = 5,
-            .tick_len_minor    = 3,
-            .hour_mark_w       = 5,
-            .hour_mark_h       = 28,
-            .show_ticker       = false, // fill-height circle leaves no room
-            .show_version_label = true, // keep the inherited bottom version label
-            .default_avatar    = nullptr, // no baked default; spinner holds
-            .bg_tile           = nullptr, // solid cream first pass
+            .badge_radius      = 86,
+            .ring_radius       = 92,
+            .halo_radius       = 98,
+            .center_y_offset   = -8,
+            .tick_len_cardinal = 6,
+            .tick_len_major    = 4,
+            .tick_len_minor    = 2,
+            .hour_mark_w       = 4,
+            .hour_mark_h       = 22,
+            .show_ticker       = true,
+            .show_version_label = false,
+            .default_avatar    = &avatar_a,
+            .bg_tile           = &bg_tile_4x4,
         };
         display_ = new BadgeWatchDisplay(panel_io, panel,
                                     DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,

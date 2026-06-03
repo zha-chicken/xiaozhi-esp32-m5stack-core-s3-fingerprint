@@ -316,7 +316,6 @@ void BadgeWatchDisplay::BuildBadgeLayout() {
     BuildBadgeLayers();
     BuildCorners();
     BuildTicker();
-    LiftVersionLabel();
     StartClockTimer();
 
     // Initial paint. SetDeviceState(kDeviceStateStarting) fires from
@@ -372,32 +371,15 @@ void BadgeWatchDisplay::BuildBackground() {
     }
     if (status_label_)       lv_obj_add_flag(status_label_, LV_OBJ_FLAG_HIDDEN);
     if (notification_label_) lv_obj_add_flag(notification_label_, LV_OBJ_FLAG_HIDDEN);
-    // version_label_: hide it unless the board asked to keep the inherited
-    // bottom "Hao Lab v.." label (ticker-less boards). When the ticker is
-    // on, the ticker shows the version string instead (version_label_ hidden).
-    // The KEEP case (reparent onto screen + pin to bottom so it renders above
-    // the badge composition) is handled at the end of BuildBadgeLayout, after
-    // all screen-level children exist — see LiftVersionLabel().
+    // version_label_: both current BadgeWatch boards run with show_ticker=true
+    // + show_version_label=false, so the ticker shows the version string and we
+    // hide the inherited bottom label. (If a future board sets
+    // show_version_label=true it must also lift version_label_ onto `screen` and
+    // re-pin it, or it renders behind the screen-level badge composition — see
+    // git history's LiftVersionLabel for that path.)
     if (version_label_ && !config_.show_version_label) {
         lv_obj_add_flag(version_label_, LV_OBJ_FLAG_HIDDEN);
     }
-}
-
-// Reparent the inherited version label onto `screen` and pin it to the
-// bottom so it renders ABOVE the screen-level badge composition (halo /
-// dial / emoji_box_ are all children of `screen`; left inside container_
-// the label would render behind them). Reparenting to screen as the last
-// step makes it the topmost child. Only used when config_.show_version_label
-// is true (ticker-less boards like CoreS3 first pass).
-void BadgeWatchDisplay::LiftVersionLabel() {
-    if (!config_.show_version_label || !version_label_) return;
-    lv_obj_t* screen = lv_screen_active();
-    lv_obj_set_parent(version_label_, screen);
-    lv_obj_set_width(version_label_, LV_HOR_RES);
-    lv_obj_set_style_text_align(version_label_, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(version_label_, lv_color_hex(COLOR_INK), 0);
-    lv_obj_set_style_text_opa(version_label_, LV_OPA_50, 0);
-    lv_obj_align(version_label_, LV_ALIGN_BOTTOM_MID, 0, -6);
 }
 
 // ── Halo: solid color circle, behind ticks + avatar, breathing opacity.
@@ -939,18 +921,19 @@ void BadgeWatchDisplay::ApplyState(DeviceState state) {
             SetTickerText(AppVersionString());
             break;
         case kDeviceStateConnecting:
-            // Avatar layer only if we already have the user's image —
-            // otherwise we'd flash the baked default while UserAvatarSync
-            // is still downloading. The boot layer (with spinner) is the
-            // honest "still preparing" surface.
-            ShowBadgeLayer((user_avatar_ready_ || kLightweightBadgeUi) ? kBfAvatar : kBfBoot);
+            // Show the avatar layer if we have *something* to show: the user's
+            // downloaded image, a baked default (config_.default_avatar), or
+            // the lightweight target. Only boards with neither a cached user
+            // avatar nor a baked default park on the boot/spinner layer until
+            // SetUserAvatar fires.
+            ShowBadgeLayer((user_avatar_ready_ || config_.default_avatar != nullptr || kLightweightBadgeUi) ? kBfAvatar : kBfBoot);
             UpdateHalo(COLOR_SAGE, 140, 255, 900);     // 55 → 100 %
             SetDialMode(kDialClock);
             SetTickerText("正在接通…");
             break;
         case kDeviceStateIdle:
         case kDeviceStateUnknown:
-            ShowBadgeLayer((user_avatar_ready_ || kLightweightBadgeUi) ? kBfAvatar : kBfBoot);
+            ShowBadgeLayer((user_avatar_ready_ || config_.default_avatar != nullptr || kLightweightBadgeUi) ? kBfAvatar : kBfBoot);
             // Coral is our brand red, always-breathing — no gray ring.
             UpdateHalo(COLOR_CORAL, 51, 140, 5000);    // 20 → 55 %, slow & calm
             SetDialMode(kDialClock);

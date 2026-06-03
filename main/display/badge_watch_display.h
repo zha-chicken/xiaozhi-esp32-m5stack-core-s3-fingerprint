@@ -114,7 +114,6 @@ private:
     void ShowBadgeLayer(BadgeLayer idx);
     void BuildCorners();
     void BuildTicker();
-    void LiftVersionLabel();
     void StartClockTimer();
     void SetTickerText(const char* text);
     const char* AppVersionString();
