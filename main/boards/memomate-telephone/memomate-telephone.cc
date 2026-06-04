@@ -105,30 +105,30 @@ private:
     // Voice cues for state transitions the core doesn't already announce.
     // Core-provided sounds: boot-ready = success, wake word = popup,
     // wifi-config / activation / low-battery prompts are automatic.
+    // talk_start/talk_end/power_off are custom zh-CN prompts (Doubao TTS,
+    // 16kHz mono Ogg Opus) in assets/locales/zh-CN/.
     void InitializeStateCues() {
         DeviceStateEventManager::GetInstance().RegisterStateChangeCallback(
             [](DeviceState prev, DeviceState cur) {
                 auto& app = Application::GetInstance();
                 if (cur == kDeviceStateListening && prev == kDeviceStateIdle) {
-                    // Talk key pressed, conversation starts (the wake-word
-                    // path plays its own popup before the state flips, but a
-                    // second cue on top is harmless and keeps this simple).
-                    app.PlaySound(Lang::Sounds::OGG_POPUP);
+                    // Talk key pressed, conversation starts: "请讲。"
+                    app.PlaySound(Lang::Sounds::OGG_TALK_START);
                 } else if (cur == kDeviceStateIdle &&
                            (prev == kDeviceStateListening || prev == kDeviceStateSpeaking)) {
-                    // Conversation paused/ended.
-                    app.PlaySound(Lang::Sounds::OGG_VIBRATION);
+                    // Conversation paused/ended: "已暂停。"
+                    app.PlaySound(Lang::Sounds::OGG_TALK_END);
                 }
             });
     }
 
     void PowerOffWithCue() {
         ESP_LOGI(TAG, "Power off requested");
-        // Give the cue a moment to leave the speaker before cutting the
+        // "正在关机。" is ~1.1s — let it leave the speaker before cutting the
         // battery latch. On USB power the latch does nothing — the cue at
         // least tells the user the request registered.
-        Application::GetInstance().PlaySound(Lang::Sounds::OGG_VIBRATION);
-        vTaskDelay(pdMS_TO_TICKS(800));
+        Application::GetInstance().PlaySound(Lang::Sounds::OGG_POWER_OFF);
+        vTaskDelay(pdMS_TO_TICKS(1600));
         power_manager_->PowerOff();
         // Still running ⇒ USB keeps the rails up and the battery latch can't
         // cut us. Re-arm after a pause so a later battery-powered long-press
