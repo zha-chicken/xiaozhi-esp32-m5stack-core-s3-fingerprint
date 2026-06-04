@@ -22,10 +22,13 @@
 #define AUDIO_CODEC_ES8311_ADDR ES8311_CODEC_DEFAULT_ADDR
 #define AUDIO_CODEC_PA_VOLTAGE  3.7f
 
-// WS2812 state LED (not yet wired — planned). GPIO4 was the LCD RST line and
-// is free since the panel was removed; adjust to the actual pad used when the
-// LED is physically installed.
-#define BUILTIN_LED_GPIO        GPIO_NUM_4
+// WS2812 state LED (not yet wired — planned). GPIO17 is the ESP_RXD edge pad:
+// nothing else on the board touches it (UART0 RX unused — console runs on
+// USB-Serial-JTAG), and it sits right next to the 3V3 and GND pads, so the
+// LED solders to three adjacent pads. GPIO16 (TX) was rejected: the ROM
+// bootloader spews boot logs on it, which would flash the LED random colors
+// at every reset. Power the LED from 3V3 (5V pad is VBUS — dead on battery).
+#define BUILTIN_LED_GPIO        GPIO_NUM_17
 
 // External handset buttons are wired to the dev board's BOOT and side (PWR)
 // buttons. BOOT = talk key (start/pause conversation), PWR = long-press
