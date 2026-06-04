@@ -37,6 +37,7 @@ private:
     i2c_master_bus_handle_t i2c_bus_;
     PowerManager* power_manager_ = nullptr;
     PowerSaveTimer* power_save_timer_ = nullptr;
+    bool power_off_pending_ = false;
 
     void InitializePowerManager() {
         power_manager_ = new PowerManager(BATTERY_CHARGING_PIN, BATTERY_ADC_PIN, BATTERY_EN_PIN);
@@ -91,6 +92,12 @@ private:
                 ESP_LOGI(TAG, "PWR long-press within boot guard — ignored");
                 return;
             }
+            // While the button stays held the long-press event re-fires
+            // about once per second — latch so we cue + power off once.
+            if (power_off_pending_) {
+                return;
+            }
+            power_off_pending_ = true;
             PowerOffWithCue();
         });
     }
@@ -123,6 +130,12 @@ private:
         Application::GetInstance().PlaySound(Lang::Sounds::OGG_VIBRATION);
         vTaskDelay(pdMS_TO_TICKS(800));
         power_manager_->PowerOff();
+        // Still running ⇒ USB keeps the rails up and the battery latch can't
+        // cut us. Re-arm after a pause so a later battery-powered long-press
+        // still works.
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        power_off_pending_ = false;
+        ESP_LOGI(TAG, "Still on USB power — PowerOff is a no-op, re-armed");
     }
 
 public:

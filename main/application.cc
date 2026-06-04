@@ -170,7 +170,9 @@ void Application::CheckNewVersion(Ota& ota) {
         // Server returns avatar_url only for bound devices (mutually exclusive
         // with activation block), so this fires once the user has paired and
         // is a no-op otherwise. Detached FreeRTOS task does the HTTP + decode.
-        if (ota.HasAvatarUrl()) {
+        // Headless boards (NoDisplay, width 0) have nowhere to draw the
+        // avatar — skip the download entirely.
+        if (ota.HasAvatarUrl() && Board::GetInstance().GetDisplay()->width() > 0) {
             UserAvatarSync::SyncFromUrl(ota.GetAvatarUrl());
         }
 
