@@ -3,9 +3,7 @@
 #include "application.h"
 #include "button.h"
 #include "config.h"
-#include "device_state_event.h"
-#include "assets/lang_config.h"
-#include "led/single_led.h"
+#include "memomate_led.h"
 #include "power_manager.h"
 #include "power_save_timer.h"
 #include <esp_log.h>
@@ -22,8 +20,9 @@
 // pickup-detection experiment proved too flaky in demos:
 //   PWR  long-press → power on / off (battery EN soft-latch)
 //   BOOT click      → talk key: start / pause conversation (ToggleChatState)
-// State feedback with no screen: voice cues (below) + WS2812 LED colors
-// (driven by the core via Led::OnStateChanged, zero code here).
+// State feedback with no screen: the WS2812 LED carries the full 灯语 (see
+// memomate_led.cc — never dark while powered). Custom voice cues were tried
+// and removed: too intrusive for the user, the LED covers it.
 
 // Ignore PWR long-press events in the first window after boot — on battery
 // the MCU cold-starts because the user is physically pressing PWR, and we
@@ -50,7 +49,7 @@ private:
         // (GetBatteryLevel below disables the timer while on USB).
         power_save_timer_ = new PowerSaveTimer(-1, 60, 300);
         power_save_timer_->OnShutdownRequest([this]() {
-            PowerOffWithCue();
+            PowerOffSequence();
         });
         power_save_timer_->SetEnabled(true);
     }
@@ -93,47 +92,29 @@ private:
                 return;
             }
             // While the button stays held the long-press event re-fires
-            // about once per second — latch so we cue + power off once.
+            // about once per second — latch so we run the sequence once.
             if (power_off_pending_) {
                 return;
             }
             power_off_pending_ = true;
-            PowerOffWithCue();
+            PowerOffSequence();
         });
     }
 
-    // Voice cues for state transitions the core doesn't already announce.
-    // Core-provided sounds: boot-ready = success, wake word = popup,
-    // wifi-config / activation / low-battery prompts are automatic.
-    // talk_start/talk_end/power_off are custom zh-CN prompts (Doubao TTS,
-    // 16kHz mono Ogg Opus) in assets/locales/zh-CN/.
-    void InitializeStateCues() {
-        DeviceStateEventManager::GetInstance().RegisterStateChangeCallback(
-            [](DeviceState prev, DeviceState cur) {
-                auto& app = Application::GetInstance();
-                if (cur == kDeviceStateListening && prev == kDeviceStateIdle) {
-                    // Talk key pressed, conversation starts: "请讲。"
-                    app.PlaySound(Lang::Sounds::OGG_TALK_START);
-                } else if (cur == kDeviceStateIdle &&
-                           (prev == kDeviceStateListening || prev == kDeviceStateSpeaking)) {
-                    // Conversation paused/ended: "已暂停。"
-                    app.PlaySound(Lang::Sounds::OGG_TALK_END);
-                }
-            });
-    }
-
-    void PowerOffWithCue() {
+    void PowerOffSequence() {
         ESP_LOGI(TAG, "Power off requested");
-        // "正在关机。" is ~1.1s — let it leave the speaker before cutting the
-        // battery latch. On USB power the latch does nothing — the cue at
-        // least tells the user the request registered.
-        Application::GetInstance().PlaySound(Lang::Sounds::OGG_POWER_OFF);
-        vTaskDelay(pdMS_TO_TICKS(1600));
+        // LED dark = powered off — that IS the feedback (灯语 rule: lit
+        // whenever powered). Give the strip a moment to refresh before the
+        // rails drop.
+        auto* led = static_cast<MemomateLed*>(GetLed());
+        led->ShowPowerOff();
+        vTaskDelay(pdMS_TO_TICKS(200));
         power_manager_->PowerOff();
         // Still running ⇒ USB keeps the rails up and the battery latch can't
-        // cut us. Re-arm after a pause so a later battery-powered long-press
-        // still works.
-        vTaskDelay(pdMS_TO_TICKS(3000));
+        // cut us. Restore the state color (never-dark rule) and re-arm so a
+        // later battery-powered long-press still works.
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        led->OnStateChanged();
         power_off_pending_ = false;
         ESP_LOGI(TAG, "Still on USB power — PowerOff is a no-op, re-armed");
     }
@@ -145,7 +126,6 @@ public:
         InitializePowerSaveTimer();
         InitializeI2c();
         InitializeButtons();
-        InitializeStateCues();
     }
 
     virtual AudioCodec* GetAudioCodec() override {
@@ -169,7 +149,7 @@ public:
     }
 
     virtual Led* GetLed() override {
-        static SingleLed led(BUILTIN_LED_GPIO);
+        static MemomateLed led(BUILTIN_LED_GPIO);
         return &led;
     }
 

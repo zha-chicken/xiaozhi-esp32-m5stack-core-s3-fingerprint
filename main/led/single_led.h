@@ -15,6 +15,16 @@ public:
 
     void OnStateChanged() override;
 
+protected:
+    // Protected so board-specific subclasses can implement their own
+    // state → color mapping on top of the same strip plumbing.
+    void BlinkOnce();
+    void Blink(int times, int interval_ms);
+    void StartContinuousBlink(int interval_ms);
+    void TurnOn();
+    void TurnOff();
+    void SetColor(uint8_t r, uint8_t g, uint8_t b);
+
 private:
     std::mutex mutex_;
     TaskHandle_t blink_task_ = nullptr;
@@ -26,13 +36,6 @@ private:
 
     void StartBlinkTask(int times, int interval_ms);
     void OnBlinkTimer();
-
-    void BlinkOnce();
-    void Blink(int times, int interval_ms);
-    void StartContinuousBlink(int interval_ms);
-    void TurnOn();
-    void TurnOff();
-    void SetColor(uint8_t r, uint8_t g, uint8_t b);
 };
 
 #endif // _SINGLE_LED_H_
