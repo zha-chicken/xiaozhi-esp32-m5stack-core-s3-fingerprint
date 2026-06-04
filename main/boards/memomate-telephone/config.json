@@ -1,0 +1,14 @@
+{
+    "target": "esp32c6",
+    "builds": [
+        {
+            "name": "memomate-telephone",
+            "sdkconfig_append": [
+                "CONFIG_USE_ESP_WAKE_WORD=y",
+                "CONFIG_PM_ENABLE=y",
+                "CONFIG_FREERTOS_USE_TICKLESS_IDLE=y",
+                "CONFIG_FREERTOS_IDLE_TIME_BEFORE_SLEEP=3"
+            ]
+        }
+    ]
+}
