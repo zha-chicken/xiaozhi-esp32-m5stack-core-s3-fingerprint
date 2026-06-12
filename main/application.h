@@ -52,6 +52,11 @@ public:
     void DismissAlert();
     void AbortSpeaking(AbortReason reason);
     void ToggleChatState();
+    // Hang up from ANY conversation state (Connecting/Listening/Speaking) and
+    // return cleanly to Idle. Unlike ToggleChatState (Speaking -> Listening) and
+    // StopListening (Listening only), this is a one-shot, state-agnostic end —
+    // needed by the MemoMate cordless hook switch (ON_HOOK = real hang-up).
+    void EndChat();
     void StartListening();
     void StopListening();
     void Reboot();

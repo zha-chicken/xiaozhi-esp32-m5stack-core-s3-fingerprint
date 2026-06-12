@@ -299,6 +299,33 @@ void Application::ToggleChatState() {
     }
 }
 
+void Application::EndChat() {
+    // State-agnostic hang-up: from Connecting/Listening/Speaking, end the
+    // conversation and land at Idle. Used by the MemoMate hook switch ON_HOOK.
+    // (ToggleChatState can't: Speaking->Listening keeps the call alive.)
+    if (device_state_ == kDeviceStateIdle) {
+        return;
+    }
+    Schedule([this]() {
+        // Re-check inside the app loop — state may have moved.
+        if (device_state_ == kDeviceStateIdle) {
+            return;
+        }
+        // Stop any in-flight TTS so the speaker goes quiet immediately.
+        if (device_state_ == kDeviceStateSpeaking) {
+            AbortSpeaking(kAbortReasonNone);
+        }
+        if (protocol_ && protocol_->IsAudioChannelOpened()) {
+            // OnAudioChannelClosed drives the transition to Idle.
+            protocol_->CloseAudioChannel();
+        } else {
+            // Channel not open yet (e.g. Connecting mid-OpenAudioChannel) —
+            // don't leave the device stuck; force Idle.
+            SetDeviceState(kDeviceStateIdle);
+        }
+    });
+}
+
 void Application::StartListening() {
     if (device_state_ == kDeviceStateActivating) {
         SetDeviceState(kDeviceStateIdle);

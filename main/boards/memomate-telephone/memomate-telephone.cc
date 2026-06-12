@@ -3,9 +3,9 @@
 #include "application.h"
 #include "button.h"
 #include "config.h"
+#include "memomate_base_link.h"
 #include "memomate_led.h"
 #include "power_manager.h"
-#include "power_save_timer.h"
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <driver/i2c_master.h>
@@ -35,7 +35,7 @@ private:
     Button pwr_button_;
     i2c_master_bus_handle_t i2c_bus_;
     PowerManager* power_manager_ = nullptr;
-    PowerSaveTimer* power_save_timer_ = nullptr;
+    MemomateBaseLink base_link_;
     bool power_off_pending_ = false;
 
     void InitializePowerManager() {
@@ -43,16 +43,13 @@ private:
         power_manager_->PowerON();
     }
 
-    void InitializePowerSaveTimer() {
-        // No display to blank; sleep mode just lets the core throttle wake
-        // word / audio input. 300 s idle on battery → auto power-off
-        // (GetBatteryLevel below disables the timer while on USB).
-        power_save_timer_ = new PowerSaveTimer(-1, 60, 300);
-        power_save_timer_->OnShutdownRequest([this]() {
-            PowerOffSequence();
-        });
-        power_save_timer_->SetEnabled(true);
-    }
+    // NOTE: no PowerSaveTimer. The phone form factor is always-on standby —
+    // it must never auto-sleep or auto-power-off, so that lifting the handset
+    // is instantly usable. The old (-1, 60, 300) timer auto-powered-off after
+    // 300 s idle on battery; that's intentionally gone. Battery runtime is
+    // handled by plugging in USB (a charge port is reserved). Manual power-off
+    // stays available via PWR long-press. See SetPowerSaveMode below for why
+    // the WiFi modem is also kept awake.
 
     void InitializeI2c() {
         i2c_master_bus_config_t i2c_bus_cfg = {
@@ -123,9 +120,23 @@ public:
     CustomBoard() :
         boot_button_(BOOT_BUTTON_GPIO), pwr_button_(PWR_BUTTON_GPIO) {
         InitializePowerManager();
-        InitializePowerSaveTimer();
         InitializeI2c();
         InitializeButtons();
+    }
+
+    // Bring up WiFi the normal xiaozhi way, then — only if STA actually
+    // connected (not in AP config mode) — start the ESP-NOW base link. The
+    // ESP-NOW peer rides the STA channel, so it must init after association.
+    // Does NOT touch xiaozhi's provisioning / WS / OTA paths.
+    virtual void StartNetwork() override {
+        WifiBoard::StartNetwork();
+        if (WifiStation::GetInstance().IsConnected()) {
+            if (!base_link_.Start()) {
+                ESP_LOGW(TAG, "base link failed to start (ESP-NOW unavailable)");
+            }
+        } else {
+            ESP_LOGI(TAG, "STA not connected (config mode?) — base link deferred");
+        }
     }
 
     virtual AudioCodec* GetAudioCodec() override {
@@ -154,22 +165,21 @@ public:
     }
 
     virtual bool GetBatteryLevel(int &level, bool& charging, bool& discharging) override {
-        static bool last_discharging = false;
+        // Still report battery for the low-battery voice alert; no power-save
+        // timer to toggle anymore (always-on standby).
         charging = power_manager_->IsCharging();
         discharging = power_manager_->IsDischarging();
-        if (discharging != last_discharging) {
-            power_save_timer_->SetEnabled(discharging);
-            last_discharging = discharging;
-        }
         level = power_manager_->GetBatteryLevel();
         return true;
     }
 
-    virtual void SetPowerSaveMode(bool enabled) override {
-        if (!enabled) {
-            power_save_timer_->WakeUp();
-        }
-        WifiBoard::SetPowerSaveMode(enabled);
+    virtual void SetPowerSaveMode(bool /*enabled*/) override {
+        // Phone form factor: always-on standby. Never let the WiFi modem enter
+        // power-save sleep — the base's ESP-NOW frames (OFF_HOOK / 3s heartbeat)
+        // must always be heard so "lift the handset = instantly talking". We
+        // ignore the requested value and keep the modem awake. Higher idle
+        // power is accepted (USB top-up via the reserved charge port).
+        WifiBoard::SetPowerSaveMode(false);
     }
 };
 
