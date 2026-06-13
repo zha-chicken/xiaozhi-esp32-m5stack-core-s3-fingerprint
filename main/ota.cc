@@ -177,6 +177,32 @@ bool Ota::CheckVersion() {
             }
         }
         has_websocket_config_ = true;
+
+        // Nested control-connection block (ADR memomate-proactive-notification-
+        // ring §1): the platform OTA puts the persistent control WS endpoint +
+        // per-device dial-out token under websocket.control. The loop above only
+        // copies string/number leaves, so this nested object is otherwise
+        // skipped — parse it explicitly into its own NVS namespace.
+        cJSON *control = cJSON_GetObjectItem(websocket, "control");
+        if (cJSON_IsObject(control)) {
+            Settings control_settings("control_ws", true);
+            cJSON *citem = NULL;
+            cJSON_ArrayForEach(citem, control) {
+                if (cJSON_IsString(citem)) {
+                    if (control_settings.GetString(citem->string) != citem->valuestring) {
+                        control_settings.SetString(citem->string, citem->valuestring);
+                    }
+                } else if (cJSON_IsNumber(citem)) {
+                    if (control_settings.GetInt(citem->string) != citem->valueint) {
+                        control_settings.SetInt(citem->string, citem->valueint);
+                    }
+                }
+            }
+            has_control_config_ = true;
+            ESP_LOGI(TAG, "control connection config received");
+        } else {
+            ESP_LOGI(TAG, "No websocket.control section");
+        }
     } else {
         ESP_LOGI(TAG, "No websocket section found!");
     }

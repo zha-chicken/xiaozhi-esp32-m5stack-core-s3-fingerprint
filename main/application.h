@@ -69,6 +69,14 @@ public:
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
 
+    // Pending notification id for the next conversation `hello` (ADR
+    // memomate-proactive-notification-ring §5): set by the MemoMate control
+    // connection when a "ring" notification arrives, consumed + cleared by the
+    // websocket protocol when it builds `hello`. So an off-hook that answers a
+    // ring carries notificationId; a plain manual off-hook does not.
+    void SetPendingNotificationId(const std::string& id);
+    std::string TakePendingNotificationId();
+
 private:
     Application();
     ~Application();
@@ -83,6 +91,9 @@ private:
     AecMode aec_mode_ = kAecOff;
     std::string last_error_message_;
     AudioService audio_service_;
+
+    std::mutex notification_mutex_;
+    std::string pending_notification_id_;
 
     bool has_server_time_ = false;
     bool aborted_ = false;

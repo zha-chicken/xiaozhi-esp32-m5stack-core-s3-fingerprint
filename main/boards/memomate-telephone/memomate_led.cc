@@ -4,6 +4,14 @@
 
 #define TAG "MemomateLed"
 
+void MemomateLed::ShowRinging() {
+    // 橙·快闪：来电振铃 — 醒目"快接电话"。只在 Idle 期间由控制连接触发，与
+    // 配网/激活的黄闪不会同时出现。接起后状态切到 Connecting，OnStateChanged
+    // 自动重绘；超时/取消止铃则显式调 OnStateChanged 回到 idle 暖白。
+    SetColor(20, 8, 0);
+    StartContinuousBlink(180);
+}
+
 void MemomateLed::OnStateChanged() {
     auto& app = Application::GetInstance();
     auto state = app.GetDeviceState();

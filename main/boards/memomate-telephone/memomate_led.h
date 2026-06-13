@@ -16,6 +16,13 @@ public:
 
     void OnStateChanged() override;
 
+    // Incoming-call 振铃 灯语 (ADR memomate-proactive-notification-ring §4):
+    // a lively amber fast-blink that reads as "answer me". Driven directly by
+    // the control connection — the device is Idle while ringing, so it doesn't
+    // collide with the state-machine colors. Call OnStateChanged() to restore
+    // the idle color when the ring stops without an answer.
+    void ShowRinging();
+
     // Power-off feedback: LED goes dark right before the battery latch is
     // cut — the darkness itself is the "powered off" signal.
     void ShowPowerOff() { TurnOff(); }

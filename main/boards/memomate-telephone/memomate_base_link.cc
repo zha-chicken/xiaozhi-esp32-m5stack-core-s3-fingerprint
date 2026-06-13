@@ -120,6 +120,10 @@ void MemomateBaseLink::HandleQueuedFrame() {
     uint8_t tag = rec.data[0];
     if (tag == PAIR_KIND_DISCOVERY && rec.len == (int)sizeof(pair_frame_t)) {
         HandlePairFrame(rec.src, rec.data, rec.len);
+    } else if (tag == BASE_ACK_MAGIC && rec.len == (int)sizeof(base_ack_t)) {
+        // The base acking a frame we originated (our RING). Best-effort — we
+        // don't gate on it; just don't warn.
+        ESP_LOGD(TAG, "RX ack from base");
     } else if (tag <= BASE_EVT_NUMBER) {
         HandleEventFrame(rec.src, rec.data, rec.len);
     } else {
@@ -181,6 +185,23 @@ void MemomateBaseLink::HangupIfActive(const char* reason) {
     app.EndChat();  // state-agnostic: Connecting/Listening/Speaking -> Idle
 }
 
+bool MemomateBaseLink::SendRing(bool start) {
+    if (!has_base_mac_) {
+        ESP_LOGW(TAG, "SendRing(%d): base MAC unknown (no frame seen yet)", start);
+        return false;
+    }
+    EnsurePeer(base_mac_);
+    base_event_t ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = BASE_EVT_RING;
+    ev.digit = start ? 1 : 0;  // 1 = start ringing, 0 = stop
+    ev.seq = tx_seq_++;
+    esp_err_t e = esp_now_send(base_mac_, (const uint8_t*)&ev, sizeof(ev));
+    ESP_LOGI(TAG, "TX RING %s seq=%lu -> base (%s)", start ? "START" : "STOP",
+             (unsigned long)ev.seq, e == ESP_OK ? "ok" : esp_err_to_name(e));
+    return e == ESP_OK;
+}
+
 void MemomateBaseLink::HandleEventFrame(const uint8_t* src, const uint8_t* data,
                                         int len) {
     if (len != (int)sizeof(base_event_t)) {
@@ -191,6 +212,10 @@ void MemomateBaseLink::HandleEventFrame(const uint8_t* src, const uint8_t* data,
     base_event_t ev;
     memcpy(&ev, data, sizeof(ev));
     ev.number[sizeof(ev.number) - 1] = '\0';  // defensive NUL
+
+    // Learn the base MAC from any inbound frame so we can unicast RING back.
+    memcpy(base_mac_, src, 6);
+    has_base_mac_ = true;
 
     // Ack first (the base judges liveness by acks), then act.
     EnsurePeer(src);

@@ -4,6 +4,7 @@
 #include "button.h"
 #include "config.h"
 #include "memomate_base_link.h"
+#include "memomate_control_link.h"
 #include "memomate_led.h"
 #include "power_manager.h"
 #include <esp_log.h>
@@ -36,6 +37,7 @@ private:
     i2c_master_bus_handle_t i2c_bus_;
     PowerManager* power_manager_ = nullptr;
     MemomateBaseLink base_link_;
+    MemomateControlLink control_link_;
     bool power_off_pending_ = false;
 
     void InitializePowerManager() {
@@ -134,8 +136,17 @@ public:
             if (!base_link_.Start()) {
                 ESP_LOGW(TAG, "base link failed to start (ESP-NOW unavailable)");
             }
+            // Persistent control connection (proactive notifications / ring).
+            // It rings the base over ESP-NOW via the base link. The task waits
+            // for OTA to provision websocket.control, so starting here (before
+            // the OTA poll) is fine. Does not touch the conversation WS / OTA.
+            control_link_.SetRingSender(
+                [this](bool start) { return base_link_.SendRing(start); });
+            if (!control_link_.Start()) {
+                ESP_LOGW(TAG, "control link failed to start");
+            }
         } else {
-            ESP_LOGI(TAG, "STA not connected (config mode?) — base link deferred");
+            ESP_LOGI(TAG, "STA not connected (config mode?) — links deferred");
         }
     }
 

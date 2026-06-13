@@ -217,6 +217,16 @@ std::string WebsocketProtocol::GetHelloMessage() {
     cJSON_AddNumberToObject(audio_params, "channels", 1);
     cJSON_AddNumberToObject(audio_params, "frame_duration", OPUS_FRAME_DURATION_MS);
     cJSON_AddItemToObject(root, "audio_params", audio_params);
+    // Proactive-notification answer handshake (ADR memomate-proactive-
+    // notification-ring §5): if this conversation is being opened to answer a
+    // ring, carry the notificationId the control connection stashed. Consumed
+    // (cleared) here so a later manual off-hook won't reuse a stale id. Additive
+    // field — absent on a normal manual off-hook / boards without the feature.
+    std::string notification_id = Application::GetInstance().TakePendingNotificationId();
+    if (!notification_id.empty()) {
+        cJSON_AddStringToObject(root, "notificationId", notification_id.c_str());
+        ESP_LOGI(TAG, "hello carries notificationId=%s", notification_id.c_str());
+    }
     auto json_str = cJSON_PrintUnformatted(root);
     std::string message(json_str);
     cJSON_free(json_str);

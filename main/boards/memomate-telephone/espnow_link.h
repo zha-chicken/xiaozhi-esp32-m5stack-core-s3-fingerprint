@@ -9,9 +9,12 @@
 // Every inbound ESP-NOW frame is classified by its FIRST BYTE, not by length
 // (lengths can collide as the protocol grows). The four frame families use
 // disjoint first-byte ranges:
-//   base_event_t.type  : 0..4              (HEARTBEAT / OFF_HOOK / ... / NUMBER)
+//   base_event_t.type  : 0..5              (HEARTBEAT / OFF_HOOK / ... / RING)
 //   base_ack_t.magic   : 0xAC
 //   pair_frame_t.kind  : 0xD0 (DISCOVERY) / 0xD1 (PAIR_REPLY)
+// Direction: base_event_t is S3 -> C6 EXCEPT BASE_EVT_RING which is C6 -> S3
+// (the handset's control connection tells the base to ring/stop). Same struct,
+// same dispatch-by-first-byte; the base just learns to RECEIVE one event type.
 // A receiver peeks data[0], matches it to a family, then re-checks len before
 // memcpy. This makes the handshake robust even though several structs differ
 // only by a few bytes.
@@ -53,16 +56,22 @@ enum {
     BASE_EVT_ON_HOOK = 2,
     BASE_EVT_DIGIT = 3,
     BASE_EVT_NUMBER = 4,
+    BASE_EVT_RING = 5,   // C6 -> S3 (reverse of the others): trigger/stop the
+                         // base ringer. digit = 1 start ringing, 0 stop. No
+                         // other payload — the base plays its own embedded
+                         // ringtone. The notificationId stays on the C6 and
+                         // never crosses ESP-NOW (Design 2).
 };
 
 typedef struct __attribute__((packed)) {
-    uint8_t type;        // one of BASE_EVT_* (0..4)
+    uint8_t type;        // one of BASE_EVT_* (0..5)
     uint8_t digit;       // BASE_EVT_DIGIT: the dialed digit 0-9.
                          // BASE_EVT_HEARTBEAT: current hook level — 1 = off-hook
                          //   (handset lifted), 0 = on-hook (on cradle). The C6
                          //   reconciles its conversation state against this each
                          //   heartbeat, so a dropped OFF_HOOK/ON_HOOK edge still
                          //   converges (level-style, not edge-only).
+                         // BASE_EVT_RING: 1 = start ringing, 0 = stop ringing.
     char number[33];     // valid when type == BASE_EVT_NUMBER (NUL-terminated)
     uint32_t seq;        // monotonic per-frame counter
 } base_event_t;

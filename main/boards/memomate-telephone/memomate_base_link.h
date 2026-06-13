@@ -29,6 +29,12 @@ public:
     // no-op. Returns false if ESP-NOW could not be brought up.
     bool Start();
 
+    // Tell the base station to start (true) / stop (false) ringing — the
+    // reverse-direction BASE_EVT_RING frame (ADR memomate-proactive-
+    // notification-ring §4). Unicast to the base MAC learned from its inbound
+    // frames; returns false if the base isn't known yet (no heartbeat seen).
+    bool SendRing(bool start);
+
 private:
     // C-style ESP-NOW callbacks dispatch to the singleton instance.
     static void OnRecvTrampoline(const esp_now_recv_info_t* info,
@@ -48,6 +54,11 @@ private:
     bool started_ = false;
     QueueHandle_t rx_queue_ = nullptr;
     TaskHandle_t task_ = nullptr;
+    // Base-station MAC, learned from the first inbound frame (heartbeat etc.) so
+    // we can unicast RING back to it. No hardcoded peer (matches the base side).
+    uint8_t base_mac_[6] = {0};
+    bool has_base_mac_ = false;
+    uint32_t tx_seq_ = 0;  // monotonic seq for frames we originate (RING)
     // Anti-thrash guard for heartbeat-driven auto-start: don't re-issue a start
     // within this window of the last one (covers a stuck off-hook level racing
     // the connect, so we don't hammer OpenAudioChannel every 3s).

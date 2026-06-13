@@ -326,6 +326,18 @@ void Application::EndChat() {
     });
 }
 
+void Application::SetPendingNotificationId(const std::string& id) {
+    std::lock_guard<std::mutex> lock(notification_mutex_);
+    pending_notification_id_ = id;
+}
+
+std::string Application::TakePendingNotificationId() {
+    std::lock_guard<std::mutex> lock(notification_mutex_);
+    std::string id = pending_notification_id_;
+    pending_notification_id_.clear();
+    return id;
+}
+
 void Application::StartListening() {
     if (device_state_ == kDeviceStateActivating) {
         SetDeviceState(kDeviceStateIdle);
