@@ -23,7 +23,9 @@ constexpr int kKeepaliveMs = 25000;    // client ping interval
 constexpr int kProvisionWaitMs = 3000; // poll for OTA-provisioned config
 constexpr int kBackoffMinMs = 1000;
 constexpr int kBackoffMaxMs = 30000;
-constexpr int64_t kRingTimeoutMs = 30000;  // ring this long, then give up
+constexpr int64_t kRingTimeoutMs = 15000;  // ring this long unanswered, then give up
+                                           // (15s — long enough to reach the phone,
+                                           // short enough to not nag; tune here)
 constexpr int64_t kRingResendMs = 1000;    // re-assert RING while ringing (self-heal)
 }  // namespace
 
