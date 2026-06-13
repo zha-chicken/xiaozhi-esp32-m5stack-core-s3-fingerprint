@@ -112,10 +112,12 @@ void MemomateControlLink::Run() {
             connected_ = true;
             backoff = kBackoffMinMs;
             ESP_LOGI(TAG, "control WS connected");
+            last_status_.clear();  // re-report occupancy on a fresh connection
             int since_ping = 0;
             while (connected_) {
                 vTaskDelay(pdMS_TO_TICKS(kTickMs));
                 ServiceRing();
+                ReportStatus();
                 since_ping += kTickMs;
                 if (since_ping >= kKeepaliveMs) {
                     since_ping = 0;
@@ -209,7 +211,8 @@ void MemomateControlLink::HandleNotification(const char* notification_id,
         ring_sender_(true);  // ESP-NOW RING START -> base body ringer
     }
     static_cast<MemomateLed*>(Board::GetInstance().GetLed())->ShowRinging();
-    SendJson("{\"type\":\"status\",\"state\":\"ringing\"}");
+    // status:ringing is reported by ReportStatus() on the next tick (single
+    // source of truth derived from ring + device state).
     ESP_LOGI(TAG, "RING notification nid=%s -> ESP-NOW RING + 振铃灯语",
              notification_id);
 }
@@ -262,9 +265,9 @@ void MemomateControlLink::StopRing(bool answered, bool send_missed) {
     if (ring_sender_) {
         ring_sender_(false);  // ESP-NOW RING STOP (base also stops on off-hook)
     }
+    // status (in_call / idle) is reported by ReportStatus() from device state.
     if (answered) {
-        SendJson("{\"type\":\"status\",\"state\":\"in_call\"}");
-        ESP_LOGI(TAG, "ring answered -> in_call (nid=%s)", nid.c_str());
+        ESP_LOGI(TAG, "ring answered -> conversation (nid=%s)", nid.c_str());
         return;
     }
     // Not answered: clear the stale pending id, restore idle 灯语.
@@ -278,9 +281,32 @@ void MemomateControlLink::StopRing(bool answered, bool send_missed) {
         SendJson(s);
         cJSON_free(s);
         cJSON_Delete(m);
-        SendJson("{\"type\":\"status\",\"state\":\"idle\"}");
         ESP_LOGW(TAG, "ring timeout -> missed (nid=%s)", nid.c_str());
     } else {
         ESP_LOGW(TAG, "ring stopped (link/local), no receipt");
     }
+}
+
+// Occupancy reporting (ADR §6): one source of truth for the control-connection
+// status, derived from ring + device state. Reported on change so the platform's
+// busy policy gates competing calls — covers BOTH ring-answered and manual
+// (dial / button) conversations, not just answered notifications.
+void MemomateControlLink::ReportStatus() {
+    bool ringing;
+    {
+        std::lock_guard<std::mutex> lock(ring_mutex_);
+        ringing = ringing_;
+    }
+    DeviceState ds = Application::GetInstance().GetDeviceState();
+    bool in_conversation = (ds == kDeviceStateConnecting ||
+                            ds == kDeviceStateListening ||
+                            ds == kDeviceStateSpeaking);
+    const char* status = ringing ? "ringing" : (in_conversation ? "in_call" : "idle");
+    if (last_status_ == status) {
+        return;
+    }
+    last_status_ = status;
+    std::string json = std::string("{\"type\":\"status\",\"state\":\"") + status + "\"}";
+    SendJson(json);
+    ESP_LOGI(TAG, "status -> %s", status);
 }

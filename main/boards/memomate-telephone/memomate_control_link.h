@@ -46,6 +46,7 @@ private:
     void HandleNotification(const char* notification_id, const char* render);
     void ServiceRing();                           // answered / missed FSM tick
     void StopRing(bool answered, bool send_missed);
+    void ReportStatus();                          // occupancy: idle/ringing/in_call on change
     bool SendJson(const std::string& json);       // ws_-guarded send
 
     RingSender ring_sender_;
@@ -55,6 +56,8 @@ private:
     std::mutex ws_mutex_;        // guards ws_ pointer for sends vs reconnect
     WebSocket* ws_ = nullptr;    // valid only between connect and disconnect
     std::atomic<bool> connected_{false};
+
+    std::string last_status_;    // last reported occupancy (task-only)
 
     std::mutex ring_mutex_;      // guards the ring fields below
     bool ringing_ = false;
