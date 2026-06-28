@@ -77,6 +77,7 @@ public:
     virtual void UpdateStatusBar(bool update_all = false) override;
     virtual void SetPowerSaveMode(bool on) override;
     virtual void SetChatMessage(const char* role, const char* content) override;
+    virtual void SetSecurityLock(bool locked) override;
 
 private:
     // ── Tiny extractors used by SetChatMessage routing ────────────────
@@ -95,6 +96,7 @@ private:
         kBfPairing,
         kBfUpgrading,
         kBfError,
+        kBfLocked,
         kBfCount
     };
 
@@ -140,6 +142,7 @@ private:
     BadgeLayer  current_badge_layer_ = kBfCount;
     int         progress_pct_ = 0;
     bool        low_battery_active_ = false;
+    bool        security_locked_ = false;
 
     // Dial overlays
     lv_obj_t*   hour_mark_   = nullptr;

@@ -28,6 +28,7 @@ private:
 
     void LoadFromNvs();
     void SaveToNvs();
+    void UseDefaultSsidIfEmpty();
 
     std::vector<SsidItem> ssid_list_;
 };

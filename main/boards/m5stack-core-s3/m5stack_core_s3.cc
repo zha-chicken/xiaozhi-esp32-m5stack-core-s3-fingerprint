@@ -9,15 +9,19 @@
 #include "axp2101.h"
 #include "mcp_server.h"
 #include "unit_driver.h"
+#include "fpc1020a_fingerprint.h"
+#include "device_state_event.h"
 
 #include <esp_log.h>
 #include <esp_system.h>
 #include <driver/i2c_master.h>
+#include <driver/uart.h>
 #include <wifi_station.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_ili9341.h>
 #include <esp_timer.h>
+#include <atomic>
 #include <vector>
 #include "esp32_camera.h"
 
@@ -113,11 +117,22 @@ public:
         delete[] read_buffer_;
     }
 
-    void UpdateTouchPoint() {
-        ReadRegs(0x02, read_buffer_, 6);
+    bool UpdateTouchPoint() {
+        uint8_t reg = 0x02;
+        esp_err_t err = i2c_master_transmit_receive(i2c_device_, &reg, 1, read_buffer_, 6, 100);
+        if (err != ESP_OK) {
+            tp_.num = 0;
+            const int64_t now_ms = esp_timer_get_time() / 1000;
+            if (now_ms - last_i2c_error_log_ms_ > 5000) {
+                ESP_LOGW(TAG, "FT6336 touch read skipped: %s", esp_err_to_name(err));
+                last_i2c_error_log_ms_ = now_ms;
+            }
+            return false;
+        }
         tp_.num = read_buffer_[0] & 0x0F;
         tp_.x = ((read_buffer_[1] & 0x0F) << 8) | read_buffer_[2];
         tp_.y = ((read_buffer_[3] & 0x0F) << 8) | read_buffer_[4];
+        return true;
     }
 
     inline const TouchPoint_t& GetTouchPoint() {
@@ -127,6 +142,7 @@ public:
 private:
     uint8_t* read_buffer_ = nullptr;
     TouchPoint_t tp_;
+    int64_t last_i2c_error_log_ms_ = 0;
 };
 
 class M5StackCoreS3Board : public WifiBoard {
@@ -139,7 +155,11 @@ private:
     Ft6336* ft6336_;
     LcdDisplay* display_;
     Esp32Camera* camera_;
+    Fpc1020aFingerprint* fingerprint_ = nullptr;
+    bool port_a_reserved_by_fingerprint_ = false;
+    std::atomic<int64_t> last_locked_notice_ms_{0};
     esp_timer_handle_t touchpad_timer_;
+    esp_timer_handle_t security_lock_ui_timer_ = nullptr;
     PowerSaveTimer* power_save_timer_;
 
     void InitializePowerSaveTimer() {
@@ -202,9 +222,111 @@ private:
     // ADR 0010 Phase 1: scan Port A and register any known Unit's MCP tools.
     // Called at the end of the constructor (after the internal init + display).
     void InitializeTools() {
+        InitializeFingerprint();
+        if (port_a_reserved_by_fingerprint_) {
+            ESP_LOGI(TAG, "Port A I2C scan skipped; pins are reserved by fingerprint UART");
+            return;
+        }
+
         InitializePortAI2c();
         auto& mcp_server = McpServer::GetInstance();
         port_a_boot_addrs_ = UnitScanAndRegister(port_a_bus_, mcp_server);
+    }
+
+    void InitializeFingerprint() {
+        struct FingerprintUartCandidate {
+            const char* label;
+            gpio_num_t rx_pin;
+            gpio_num_t tx_pin;
+            int baud_rate;
+            Fpc1020aFingerprint::ProbeProtocol protocol;
+            bool uses_port_a;
+        };
+
+        const FingerprintUartCandidate candidates[] = {
+            {"Finger2 Port C UART fallback (RX=G18 TX=G17)", FINGERPRINT_UART_FALLBACK_RX_PIN, FINGERPRINT_UART_FALLBACK_TX_PIN,
+             FINGERPRINT2_UART_BAUD, Fpc1020aFingerprint::ProbeProtocol::Finger2, false},
+            {"Finger2 Port C UART fallback swapped (RX=G17 TX=G18)", FINGERPRINT_UART_FALLBACK_TX_PIN, FINGERPRINT_UART_FALLBACK_RX_PIN,
+             FINGERPRINT2_UART_BAUD, Fpc1020aFingerprint::ProbeProtocol::Finger2, false},
+            {"Finger2 Port A UART (RX=G1 TX=G2)", FINGERPRINT_UART_RX_PIN, FINGERPRINT_UART_TX_PIN,
+             FINGERPRINT2_UART_BAUD, Fpc1020aFingerprint::ProbeProtocol::Finger2, true},
+            {"Finger2 Port A UART swapped (RX=G2 TX=G1)", FINGERPRINT_UART_TX_PIN, FINGERPRINT_UART_RX_PIN,
+             FINGERPRINT2_UART_BAUD, Fpc1020aFingerprint::ProbeProtocol::Finger2, true},
+            {"FPC1020A Port A UART (RX=G1 TX=G2)", FINGERPRINT_UART_RX_PIN, FINGERPRINT_UART_TX_PIN,
+             FINGERPRINT_FPC1020A_UART_BAUD, Fpc1020aFingerprint::ProbeProtocol::Fpc1020a, true},
+            {"FPC1020A Port A UART swapped (RX=G2 TX=G1)", FINGERPRINT_UART_TX_PIN, FINGERPRINT_UART_RX_PIN,
+             FINGERPRINT_FPC1020A_UART_BAUD, Fpc1020aFingerprint::ProbeProtocol::Fpc1020a, true},
+            {"FPC1020A Port C UART fallback (RX=G18 TX=G17)", FINGERPRINT_UART_FALLBACK_RX_PIN, FINGERPRINT_UART_FALLBACK_TX_PIN,
+             FINGERPRINT_FPC1020A_UART_BAUD, Fpc1020aFingerprint::ProbeProtocol::Fpc1020a, false},
+            {"FPC1020A Port C UART fallback swapped (RX=G17 TX=G18)", FINGERPRINT_UART_FALLBACK_TX_PIN, FINGERPRINT_UART_FALLBACK_RX_PIN,
+             FINGERPRINT_FPC1020A_UART_BAUD, Fpc1020aFingerprint::ProbeProtocol::Fpc1020a, false},
+        };
+
+        for (const auto& candidate : candidates) {
+            ESP_LOGI(TAG, "Probing fingerprint on %s", candidate.label);
+            auto* driver = new Fpc1020aFingerprint(
+                UART_NUM_1,
+                candidate.rx_pin,
+                candidate.tx_pin,
+                candidate.baud_rate,
+                candidate.protocol);
+            if (!driver->Begin()) {
+                delete driver;
+                continue;
+            }
+
+            fingerprint_ = driver;
+            port_a_reserved_by_fingerprint_ = candidate.uses_port_a;
+            auto& mcp_server = McpServer::GetInstance();
+            fingerprint_->RegisterTools(mcp_server);
+            fingerprint_->StartAutoUnlock();
+            ESP_LOGI(TAG, "Fingerprint unlock active on %s", candidate.label);
+            return;
+        }
+
+        ESP_LOGI(TAG, "Fingerprint unlock not active");
+    }
+
+    bool IsConversationState(DeviceState state) const {
+        return state == kDeviceStateConnecting ||
+               state == kDeviceStateListening ||
+               state == kDeviceStateSpeaking;
+    }
+
+    void UpdateFingerprintLockUi() {
+        auto display = GetDisplay();
+        if (display == nullptr) {
+            return;
+        }
+
+        DeviceState state = Application::GetInstance().GetDeviceState();
+        if (IsConversationState(state)) {
+            display->SetSecurityLock(false);
+            return;
+        }
+        if (state == kDeviceStateIdle || state == kDeviceStateUnknown) {
+            bool unlocked = fingerprint_ != nullptr && fingerprint_->IsUnlocked();
+            display->SetSecurityLock(!unlocked);
+        }
+    }
+
+    void InitializeSecurityLockUi() {
+        DeviceStateEventManager::GetInstance().RegisterStateChangeCallback(
+            [this](DeviceState /*previous*/, DeviceState /*current*/) {
+                UpdateFingerprintLockUi();
+            });
+
+        esp_timer_create_args_t timer_args = {
+            .callback = [](void* arg) {
+                static_cast<M5StackCoreS3Board*>(arg)->UpdateFingerprintLockUi();
+            },
+            .arg = this,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "finger_lock_ui",
+            .skip_unhandled_events = true,
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&timer_args, &security_lock_ui_timer_));
+        ESP_ERROR_CHECK(esp_timer_start_periodic(security_lock_ui_timer_, 1000 * 1000));
     }
 
     // ADR 0010: no per-tool removal exists in mcp_server. To reflect a Unit being
@@ -264,30 +386,69 @@ private:
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 
+    void StartLocalFingerprintEnrollTest() {
+        if (fingerprint_ == nullptr || !fingerprint_->ready()) {
+            ESP_LOGW(TAG, "Local fingerprint enrollment test ignored: sensor not ready");
+            auto display = GetDisplay();
+            if (display != nullptr) {
+                display->ShowNotification("Fingerprint sensor not ready", 3000);
+            }
+            return;
+        }
+
+        std::string error;
+        if (!fingerprint_->StartEnroll(1, 1, &error)) {
+            ESP_LOGW(TAG, "Local fingerprint enrollment test failed to start: %s", error.c_str());
+            auto display = GetDisplay();
+            if (display != nullptr) {
+                display->ShowNotification("Fingerprint enroll busy/failed", 3000);
+            }
+            return;
+        }
+
+        ESP_LOGI(TAG, "Local fingerprint enrollment test started for id=1");
+        auto display = GetDisplay();
+        if (display != nullptr) {
+            display->ShowNotification("Fingerprint enroll ID1 started", 3000);
+        }
+    }
+
     void PollTouchpad() {
         static bool was_touched = false;
+        static bool long_press_handled = false;
         static int64_t touch_start_time = 0;
-        const int64_t TOUCH_THRESHOLD_MS = 500;  // 触摸时长阈值，超过500ms视为长按
+        const int64_t TOUCH_SHORT_THRESHOLD_MS = 500;
+        const int64_t FINGERPRINT_ENROLL_TOUCH_MS = 3000;
         
-        ft6336_->UpdateTouchPoint();
+        if (!ft6336_->UpdateTouchPoint()) {
+            return;
+        }
         auto& touch_point = ft6336_->GetTouchPoint();
         
         // 检测触摸开始
         if (touch_point.num > 0 && !was_touched) {
             was_touched = true;
+            long_press_handled = false;
             touch_start_time = esp_timer_get_time() / 1000; // 转换为毫秒
-        } 
+        } else if (touch_point.num > 0 && was_touched && !long_press_handled) {
+            int64_t touch_duration = (esp_timer_get_time() / 1000) - touch_start_time;
+            if (touch_duration >= FINGERPRINT_ENROLL_TOUCH_MS) {
+                long_press_handled = true;
+                StartLocalFingerprintEnrollTest();
+            }
+        }
         // 检测触摸释放
         else if (touch_point.num == 0 && was_touched) {
             was_touched = false;
             int64_t touch_duration = (esp_timer_get_time() / 1000) - touch_start_time;
             
             // 只有短触才触发
-            if (touch_duration < TOUCH_THRESHOLD_MS) {
+            if (!long_press_handled && touch_duration < TOUCH_SHORT_THRESHOLD_MS) {
                 auto& app = Application::GetInstance();
                 if (app.GetDeviceState() == kDeviceStateStarting && 
                     !WifiStation::GetInstance().IsConnected()) {
-                    ResetWifiConfiguration();
+                    ESP_LOGI(TAG, "Touch ignored while WiFi is still starting");
+                    return;
                 }
                 app.ToggleChatState();
             }
@@ -437,6 +598,27 @@ public:
         InitializeFt6336TouchPad();
         GetBacklight()->RestoreBrightness();
         InitializeTools();  // ADR 0010: scan Port A, register Unit MCP tools
+        InitializeSecurityLockUi();
+    }
+
+    virtual bool CanStartConversation(const char* source) override {
+        if (fingerprint_ != nullptr && fingerprint_->IsUnlocked()) {
+            return true;
+        }
+
+        const int64_t now_ms = esp_timer_get_time() / 1000;
+        int64_t last_notice_ms = last_locked_notice_ms_.load();
+        if (now_ms - last_notice_ms > 2000 &&
+            last_locked_notice_ms_.compare_exchange_strong(last_notice_ms, now_ms)) {
+            bool sensor_ready = fingerprint_ != nullptr && fingerprint_->ready();
+            ESP_LOGW(TAG, "Conversation blocked by fingerprint lock source=%s sensor_ready=%d",
+                     source != nullptr ? source : "unknown", sensor_ready ? 1 : 0);
+            auto display = GetDisplay();
+            if (display != nullptr) {
+                display->SetSecurityLock(true);
+            }
+        }
+        return false;
     }
 
     virtual AudioCodec* GetAudioCodec() override {

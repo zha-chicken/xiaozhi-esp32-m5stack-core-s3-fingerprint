@@ -249,6 +249,20 @@ void BadgeWatchDisplay::SetChatMessage(const char* role, const char* content) {
     SetTickerText(c.c_str());
 }
 
+void BadgeWatchDisplay::SetSecurityLock(bool locked) {
+    DeviceState state = kDeviceStateUnknown;
+    {
+        DisplayLockGuard lock(this);
+        if (security_locked_ == locked) {
+            return;
+        }
+        security_locked_ = locked;
+        state = current_state_;
+        current_badge_layer_ = kBfCount;
+    }
+    ApplyState(state);
+}
+
 // ── Tiny extractors used by SetChatMessage routing ────────────────
 std::string BadgeWatchDisplay::ExtractSixDigits(const std::string& s) {
     for (size_t i = 0; i + 6 <= s.size(); ++i) {
@@ -740,6 +754,14 @@ void BadgeWatchDisplay::BuildBadgeLayers() {
         bf_error_text_ = add_label(l, "出错了", nullptr, COLOR_INK, LV_OPA_COVER);
         add_label(l, "稍后重试", nullptr, COLOR_INK, LV_OPA_60);
     }
+
+    // ── Layer 7: fingerprint lock ─────────────────────────────────
+    {
+        lv_obj_t* l = make_layer(kBfLocked, 4);
+        add_label(l, "LOCK", &lv_font_montserrat_28, COLOR_INK, LV_OPA_COVER);
+        add_label(l, "指纹解锁", nullptr, COLOR_CORAL, LV_OPA_COVER);
+        add_label(l, "通过后可对话", nullptr, COLOR_INK, LV_OPA_60);
+    }
 }
 
 // ── Toggle the visible layer; cheap because all layers are pre-built.
@@ -891,6 +913,19 @@ void BadgeWatchDisplay::ApplyState(DeviceState state) {
             (current_badge_layer_ == kBfError && state != kDeviceStateUnknown)) {
             current_badge_layer_ = kBfCount;   // sentinel — forces re-toggle
         }
+    }
+
+    if (security_locked_ &&
+        (state == kDeviceStateIdle || state == kDeviceStateUnknown)) {
+        ShowBadgeLayer(kBfLocked);
+        UpdateHalo(COLOR_INK, 38, 115, 3600);
+        SetDialMode(kDialClock);
+        SetTickerText("请按指纹解锁");
+        if (low_battery_active_) {
+            UpdateHalo(COLOR_RED, 102, 217, 2400);
+            SetTickerText("电量不足，请尽快充电");
+        }
+        return;
     }
 
     switch (state) {

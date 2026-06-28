@@ -2,6 +2,8 @@
 
 （中文 | [English](README_en.md) | [日本語](README_ja.md)）
 
+> 当前 fork 默认面向 M5Stack CoreS3 + M5Stack Unit Finger2：开机显示指纹锁 UI，指纹匹配后才允许与 Agent 对话。克隆、编译和烧录步骤见 [main/boards/m5stack-core-s3/README.md](main/boards/m5stack-core-s3/README.md)。
+
 ## 介绍
 
 👉 [人类：给 AI 装摄像头 vs AI：当场发现主人三天没洗头【bilibili】](https://www.bilibili.com/video/BV1bpjgzKEhd/)

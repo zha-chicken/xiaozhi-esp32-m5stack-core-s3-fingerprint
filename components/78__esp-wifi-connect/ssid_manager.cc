@@ -8,6 +8,23 @@
 #define NVS_NAMESPACE "wifi"
 #define MAX_WIFI_SSID_COUNT 10
 
+#if __has_include("wifi_defaults_local.h")
+#include "wifi_defaults_local.h"
+#endif
+
+#ifndef XIAOZHI_DEFAULT_WIFI_SSID
+#define XIAOZHI_DEFAULT_WIFI_SSID ""
+#endif
+
+#ifndef XIAOZHI_DEFAULT_WIFI_PASSWORD
+#define XIAOZHI_DEFAULT_WIFI_PASSWORD ""
+#endif
+
+namespace {
+constexpr char kDefaultWifiSsid[] = XIAOZHI_DEFAULT_WIFI_SSID;
+constexpr char kDefaultWifiPassword[] = XIAOZHI_DEFAULT_WIFI_PASSWORD;
+}
+
 SsidManager::SsidManager() {
     LoadFromNvs();
 }
@@ -31,6 +48,7 @@ void SsidManager::LoadFromNvs() {
     if (ret != ESP_OK) {
         // The namespace doesn't exist, just return
         ESP_LOGW(TAG, "NVS namespace %s doesn't exist", NVS_NAMESPACE);
+        UseDefaultSsidIfEmpty();
         return;
     }
     for (int i = 0; i < MAX_WIFI_SSID_COUNT; i++) {
@@ -56,6 +74,7 @@ void SsidManager::LoadFromNvs() {
         ssid_list_.push_back({ssid, password});
     }
     nvs_close(nvs_handle);
+    UseDefaultSsidIfEmpty();
 }
 
 void SsidManager::SaveToNvs() {
@@ -81,6 +100,20 @@ void SsidManager::SaveToNvs() {
     }
     nvs_commit(nvs_handle);
     nvs_close(nvs_handle);
+}
+
+void SsidManager::UseDefaultSsidIfEmpty() {
+    if (!ssid_list_.empty()) {
+        return;
+    }
+
+    if (kDefaultWifiSsid[0] == '\0') {
+        ESP_LOGI(TAG, "No default WiFi SSID configured");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Using default WiFi SSID %s", kDefaultWifiSsid);
+    ssid_list_.push_back({kDefaultWifiSsid, kDefaultWifiPassword});
 }
 
 void SsidManager::AddSsid(const std::string& ssid, const std::string& password) {

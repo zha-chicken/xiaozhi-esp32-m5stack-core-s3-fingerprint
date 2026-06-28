@@ -26,6 +26,16 @@
 #define PORT_A_I2C_SDA_PIN  GPIO_NUM_2
 #define PORT_A_I2C_SCL_PIN  GPIO_NUM_1
 
+// M5Stack Unit Finger (FPC1020A) UART. The official CoreS3 example uses
+// Serial2 RX=G1, TX=G2 at 19200 8N1; keep G18/G17 as a fallback for alternate
+// Port C cabling.
+#define FINGERPRINT_UART_RX_PIN          GPIO_NUM_1
+#define FINGERPRINT_UART_TX_PIN          GPIO_NUM_2
+#define FINGERPRINT_UART_FALLBACK_RX_PIN GPIO_NUM_18
+#define FINGERPRINT_UART_FALLBACK_TX_PIN GPIO_NUM_17
+#define FINGERPRINT_FPC1020A_UART_BAUD   19200
+#define FINGERPRINT2_UART_BAUD           115200
+
 #define BUILTIN_LED_GPIO        GPIO_NUM_NC
 #define BOOT_BUTTON_GPIO        GPIO_NUM_0
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_NC

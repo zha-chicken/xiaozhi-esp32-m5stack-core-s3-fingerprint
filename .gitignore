@@ -4,6 +4,7 @@ components/
 components/*
 !components/78__esp-wifi-connect/
 !components/78__esp-wifi-connect/**
+components/78__esp-wifi-connect/wifi_defaults_local.h
 managed_components/
 build/
 .vscode/

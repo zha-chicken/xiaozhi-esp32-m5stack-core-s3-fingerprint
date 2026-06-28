@@ -54,3 +54,7 @@ void Display::SetTheme(Theme* theme) {
 void Display::SetPowerSaveMode(bool on) {
     ESP_LOGW(TAG, "SetPowerSaveMode: %d", on);
 }
+
+void Display::SetSecurityLock(bool locked) {
+    ESP_LOGW(TAG, "SetSecurityLock: %d", locked);
+}
