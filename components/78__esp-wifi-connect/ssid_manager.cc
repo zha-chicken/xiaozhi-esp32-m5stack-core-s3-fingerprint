@@ -103,17 +103,30 @@ void SsidManager::SaveToNvs() {
 }
 
 void SsidManager::UseDefaultSsidIfEmpty() {
-    if (!ssid_list_.empty()) {
-        return;
-    }
-
     if (kDefaultWifiSsid[0] == '\0') {
         ESP_LOGI(TAG, "No default WiFi SSID configured");
         return;
     }
 
-    ESP_LOGI(TAG, "Using default WiFi SSID %s", kDefaultWifiSsid);
-    ssid_list_.push_back({kDefaultWifiSsid, kDefaultWifiPassword});
+    for (auto it = ssid_list_.begin(); it != ssid_list_.end(); ++it) {
+        if (it->ssid == kDefaultWifiSsid) {
+            bool should_save = it->password != kDefaultWifiPassword || it != ssid_list_.begin();
+            it->password = kDefaultWifiPassword;
+            if (it != ssid_list_.begin()) {
+                auto item = *it;
+                ssid_list_.erase(it);
+                ssid_list_.insert(ssid_list_.begin(), item);
+            }
+            if (should_save) {
+                SaveToNvs();
+            }
+            return;
+        }
+    }
+
+    ESP_LOGI(TAG, "Adding default WiFi SSID %s", kDefaultWifiSsid);
+    ssid_list_.insert(ssid_list_.begin(), {kDefaultWifiSsid, kDefaultWifiPassword});
+    SaveToNvs();
 }
 
 void SsidManager::AddSsid(const std::string& ssid, const std::string& password) {
