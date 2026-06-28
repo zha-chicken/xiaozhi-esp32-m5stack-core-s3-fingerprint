@@ -41,6 +41,9 @@ public:
         uint8_t data = ReadReg(0x90);
         data |= 0b10110100;
         WriteReg(0x90, data);
+        WriteReg(0x92, 0b00001101);  // ALDO1 / PA PVDD / 1V8
+        WriteReg(0x93, 0b00011100);  // ALDO2 / codec / 3V3
+        WriteReg(0x94, 0b00011100);  // ALDO3 / codec + mic / 3V3
         WriteReg(0x99, (0b11110 - 5));
         WriteReg(0x97, (0b11110 - 2));
         WriteReg(0x69, 0b00110101);
@@ -384,6 +387,7 @@ private:
         ESP_LOGI(TAG, "Init AW9523");
         aw9523_ = new Aw9523(i2c_bus_, 0x58);
         vTaskDelay(pdMS_TO_TICKS(50));
+        aw9523_->ResetAw88298();
     }
 
     void StartLocalFingerprintEnrollTest() {
