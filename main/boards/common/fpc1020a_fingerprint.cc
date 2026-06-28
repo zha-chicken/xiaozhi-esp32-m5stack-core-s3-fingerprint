@@ -1010,7 +1010,7 @@ void Fpc1020aFingerprint::RegisterTools(McpServer& mcp) {
 
     mcp.AddTool(
         "self.fingerprint.set_auto_unlock",
-        "Enable or disable automatic local fingerprint unlock. When enabled, a successful match wakes the idle device and starts listening.",
+        "Enable or disable automatic local fingerprint unlock. When enabled, a successful match unlocks the idle device so the user can tap the avatar or use wake word to start talking.",
         PropertyList({
             Property("enabled", kPropertyTypeBoolean),
         }),
@@ -1119,9 +1119,9 @@ void Fpc1020aFingerprint::HandleMatchedFingerprint(const MatchResult& result) {
         if (state == kDeviceStateIdle) {
             auto display = Board::GetInstance().GetDisplay();
             if (display != nullptr) {
+                display->SetSecurityLock(false);
                 display->ShowNotification("Fingerprint unlocked", 1500);
             }
-            app.StartListening();
         } else if (state == kDeviceStateActivating) {
             app.SetDeviceState(kDeviceStateIdle);
         } else {

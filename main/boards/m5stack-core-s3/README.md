@@ -77,7 +77,8 @@ Exit monitor with `Ctrl+]`.
 - Boot default: locked.
 - Locked UI: center badge shows `LOCK`, `指纹解锁`, and `通过后可对话`; ticker shows `请按指纹解锁`.
 - Short touch / wake word / direct Agent listen calls are blocked while locked.
-- A successful fingerprint match unlocks conversation for 60 seconds and starts listening.
+- A successful fingerprint match unlocks conversation for 60 seconds.
+- After unlocking, tap the avatar once to start Agent listening.
 - After the unlock window expires and the device returns to idle, the lock UI comes back.
 
 ## Local Enrollment Test

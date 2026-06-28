@@ -1,5 +1,6 @@
 #include "afe_audio_processor.h"
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 
 #define PROCESSOR_RUNNING 0x01
 
@@ -10,7 +11,11 @@ AfeAudioProcessor::AfeAudioProcessor()
     event_group_ = xEventGroupCreate();
 }
 
-void AfeAudioProcessor::Initialize(AudioCodec* codec, int frame_duration_ms, srmodel_list_t* models_list) {
+bool AfeAudioProcessor::Initialize(AudioCodec* codec, int frame_duration_ms, srmodel_list_t* models_list) {
+    if (afe_data_ != nullptr && task_handle_ != nullptr) {
+        return true;
+    }
+
     codec_ = codec;
     frame_samples_ = frame_duration_ms * 16000 / 1000;
 
@@ -65,13 +70,48 @@ void AfeAudioProcessor::Initialize(AudioCodec* codec, int frame_duration_ms, srm
 #endif
 
     afe_iface_ = esp_afe_handle_from_config(afe_config);
+    if (afe_iface_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to get AFE interface");
+        return false;
+    }
+
     afe_data_ = afe_iface_->create_from_config(afe_config);
-    
-    xTaskCreate([](void* arg) {
+    if (afe_data_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create AFE data");
+        return false;
+    }
+
+    auto task_entry = [](void* arg) {
         auto this_ = (AfeAudioProcessor*)arg;
         this_->AudioProcessorTask();
         vTaskDelete(NULL);
-    }, "audio_communication", 4096, this, 3, NULL);
+    };
+
+    constexpr uint32_t kTaskStackSize = 4096;
+    BaseType_t task_created = pdFAIL;
+
+#if CONFIG_SPIRAM && CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+    task_created = xTaskCreateWithCaps(
+        task_entry, "audio_communication", kTaskStackSize, this, 3, &task_handle_,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (task_created != pdPASS) {
+        ESP_LOGW(TAG, "Failed to create audio processor task in PSRAM, falling back to internal RAM");
+    }
+#endif
+
+    if (task_created != pdPASS) {
+        task_created = xTaskCreate(task_entry, "audio_communication", kTaskStackSize, this, 3, &task_handle_);
+    }
+
+    if (task_created != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create audio processor task");
+        afe_iface_->destroy(afe_data_);
+        afe_data_ = nullptr;
+        task_handle_ = nullptr;
+        return false;
+    }
+
+    return true;
 }
 
 AfeAudioProcessor::~AfeAudioProcessor() {

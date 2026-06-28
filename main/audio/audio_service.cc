@@ -478,7 +478,10 @@ void AudioService::EnableVoiceProcessing(bool enable) {
     ESP_LOGD(TAG, "%s voice processing", enable ? "Enabling" : "Disabling");
     if (enable) {
         if (!audio_processor_initialized_) {
-            audio_processor_->Initialize(codec_, OPUS_FRAME_DURATION_MS, models_list_);
+            if (!audio_processor_->Initialize(codec_, OPUS_FRAME_DURATION_MS, models_list_)) {
+                ESP_LOGE(TAG, "Failed to initialize voice processor");
+                return;
+            }
             audio_processor_initialized_ = true;
         }
 
@@ -517,7 +520,10 @@ void AudioService::EnableAudioTesting(bool enable) {
 void AudioService::EnableDeviceAec(bool enable) {
     ESP_LOGI(TAG, "%s device AEC", enable ? "Enabling" : "Disabling");
     if (!audio_processor_initialized_) {
-        audio_processor_->Initialize(codec_, OPUS_FRAME_DURATION_MS, models_list_);
+        if (!audio_processor_->Initialize(codec_, OPUS_FRAME_DURATION_MS, models_list_)) {
+            ESP_LOGE(TAG, "Failed to initialize voice processor");
+            return;
+        }
         audio_processor_initialized_ = true;
     }
 
