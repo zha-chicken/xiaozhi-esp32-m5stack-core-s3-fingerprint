@@ -11,6 +11,7 @@
 #include "unit_driver.h"
 #include "fpc1020a_fingerprint.h"
 #include "device_state_event.h"
+#include "memo_store.h"
 
 #include <esp_log.h>
 #include <esp_system.h>
@@ -225,6 +226,7 @@ private:
     // ADR 0010 Phase 1: scan Port A and register any known Unit's MCP tools.
     // Called at the end of the constructor (after the internal init + display).
     void InitializeTools() {
+        RegisterMemoTool();
         InitializeFingerprint();
         if (port_a_reserved_by_fingerprint_) {
             ESP_LOGI(TAG, "Port A I2C scan skipped; pins are reserved by fingerprint UART");
@@ -234,6 +236,25 @@ private:
         InitializePortAI2c();
         auto& mcp_server = McpServer::GetInstance();
         port_a_boot_addrs_ = UnitScanAndRegister(port_a_bus_, mcp_server);
+    }
+
+    void RegisterMemoTool() {
+        auto& mcp_server = McpServer::GetInstance();
+        mcp_server.AddTool("self.memo.manage",
+            "Manage local memos. action=list/view/create/update/delete/clear/delete_all. clear/delete_all deletes every memo; update/delete require id.",
+            PropertyList({
+                Property("action", kPropertyTypeString, std::string("list")),
+                Property("id", kPropertyTypeInteger, 0, 0, 1000000),
+                Property("title", kPropertyTypeString, std::string("")),
+                Property("content", kPropertyTypeString, std::string(""))
+            }),
+            [](const PropertyList& properties) -> ReturnValue {
+                return CoreS3MemoStore::HandleMcpAction(
+                    properties["action"].value<std::string>(),
+                    properties["id"].value<int>(),
+                    properties["title"].value<std::string>(),
+                    properties["content"].value<std::string>());
+            });
     }
 
     void InitializeFingerprint() {
@@ -390,31 +411,23 @@ private:
         aw9523_->ResetAw88298();
     }
 
-    void StartLocalFingerprintEnrollTest() {
-        if (fingerprint_ == nullptr || !fingerprint_->ready()) {
-            ESP_LOGW(TAG, "Local fingerprint enrollment test ignored: sensor not ready");
+    void ShowMemoList() {
+        auto* badge_display = dynamic_cast<BadgeWatchDisplay*>(display_);
+        if (badge_display == nullptr) {
             auto display = GetDisplay();
             if (display != nullptr) {
-                display->ShowNotification("Fingerprint sensor not ready", 3000);
+                display->ShowNotification(CoreS3MemoStore::DisplayText().c_str(), 5000);
             }
             return;
         }
 
-        std::string error;
-        if (!fingerprint_->StartEnroll(1, 1, &error)) {
-            ESP_LOGW(TAG, "Local fingerprint enrollment test failed to start: %s", error.c_str());
-            auto display = GetDisplay();
-            if (display != nullptr) {
-                display->ShowNotification("Fingerprint enroll busy/failed", 3000);
-            }
-            return;
-        }
+        auto text = CoreS3MemoStore::DisplayText();
+        badge_display->ShowMemoList(text.c_str());
+    }
 
-        ESP_LOGI(TAG, "Local fingerprint enrollment test started for id=1");
-        auto display = GetDisplay();
-        if (display != nullptr) {
-            display->ShowNotification("Fingerprint enroll ID1 started", 3000);
-        }
+    bool HideMemoListIfVisible() {
+        auto* badge_display = dynamic_cast<BadgeWatchDisplay*>(display_);
+        return badge_display != nullptr && badge_display->HideMemoList();
     }
 
     void PollTouchpad() {
@@ -422,7 +435,7 @@ private:
         static bool long_press_handled = false;
         static int64_t touch_start_time = 0;
         const int64_t TOUCH_SHORT_THRESHOLD_MS = 500;
-        const int64_t FINGERPRINT_ENROLL_TOUCH_MS = 3000;
+        const int64_t MEMO_VIEW_TOUCH_MS = 3000;
         
         if (!ft6336_->UpdateTouchPoint()) {
             return;
@@ -436,9 +449,9 @@ private:
             touch_start_time = esp_timer_get_time() / 1000; // 转换为毫秒
         } else if (touch_point.num > 0 && was_touched && !long_press_handled) {
             int64_t touch_duration = (esp_timer_get_time() / 1000) - touch_start_time;
-            if (touch_duration >= FINGERPRINT_ENROLL_TOUCH_MS) {
+            if (touch_duration >= MEMO_VIEW_TOUCH_MS) {
                 long_press_handled = true;
-                StartLocalFingerprintEnrollTest();
+                ShowMemoList();
             }
         }
         // 检测触摸释放
@@ -448,6 +461,9 @@ private:
             
             // 只有短触才触发
             if (!long_press_handled && touch_duration < TOUCH_SHORT_THRESHOLD_MS) {
+                if (HideMemoListIfVisible()) {
+                    return;
+                }
                 auto& app = Application::GetInstance();
                 if (app.GetDeviceState() == kDeviceStateStarting && 
                     !WifiStation::GetInstance().IsConnected()) {

@@ -263,6 +263,59 @@ void BadgeWatchDisplay::SetSecurityLock(bool locked) {
     ApplyState(state);
 }
 
+void BadgeWatchDisplay::ShowMemoList(const char* text) {
+    DisplayLockGuard lock(this);
+    if (memo_panel_ == nullptr) {
+        memo_panel_ = lv_obj_create(lv_screen_active());
+        lv_obj_remove_style_all(memo_panel_);
+        lv_obj_set_size(memo_panel_, LV_HOR_RES, LV_VER_RES);
+        lv_obj_set_pos(memo_panel_, 0, 0);
+        lv_obj_set_scroll_dir(memo_panel_, LV_DIR_VER);
+        lv_obj_set_scrollbar_mode(memo_panel_, LV_SCROLLBAR_MODE_AUTO);
+        lv_obj_set_style_bg_color(memo_panel_, lv_color_hex(COLOR_CREAM), 0);
+        lv_obj_set_style_bg_opa(memo_panel_, LV_OPA_COVER, 0);
+        lv_obj_set_style_pad_left(memo_panel_, 14, 0);
+        lv_obj_set_style_pad_right(memo_panel_, 14, 0);
+        lv_obj_set_style_pad_top(memo_panel_, 12, 0);
+        lv_obj_set_style_pad_bottom(memo_panel_, 16, 0);
+
+        auto* title = lv_label_create(memo_panel_);
+        lv_label_set_text(title, "备忘录");
+        lv_obj_set_style_text_font(title, &font_puhui_16_4, 0);
+        lv_obj_set_style_text_color(title, lv_color_hex(COLOR_INK), 0);
+        lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+        auto* hint = lv_label_create(memo_panel_);
+        lv_label_set_text(hint, "轻触关闭");
+        lv_obj_set_style_text_font(hint, &font_puhui_16_4, 0);
+        lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_INK), 0);
+        lv_obj_set_style_text_opa(hint, LV_OPA_60, 0);
+        lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, 0, 0);
+
+        memo_text_ = lv_label_create(memo_panel_);
+        lv_label_set_long_mode(memo_text_, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(memo_text_, LV_HOR_RES - 28);
+        lv_obj_set_style_text_font(memo_text_, &font_puhui_16_4, 0);
+        lv_obj_set_style_text_color(memo_text_, lv_color_hex(COLOR_INK), 0);
+        lv_obj_align(memo_text_, LV_ALIGN_TOP_LEFT, 0, 34);
+    }
+
+    lv_label_set_text(memo_text_, (text != nullptr && text[0] != '\0') ? text : "暂无备忘录");
+    lv_obj_clear_flag(memo_panel_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(memo_panel_);
+    memo_panel_visible_ = true;
+}
+
+bool BadgeWatchDisplay::HideMemoList() {
+    DisplayLockGuard lock(this);
+    if (memo_panel_ == nullptr || !memo_panel_visible_) {
+        return false;
+    }
+    lv_obj_add_flag(memo_panel_, LV_OBJ_FLAG_HIDDEN);
+    memo_panel_visible_ = false;
+    return true;
+}
+
 // ── Tiny extractors used by SetChatMessage routing ────────────────
 std::string BadgeWatchDisplay::ExtractSixDigits(const std::string& s) {
     for (size_t i = 0; i + 6 <= s.size(); ++i) {

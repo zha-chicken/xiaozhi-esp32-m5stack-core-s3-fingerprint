@@ -78,6 +78,8 @@ public:
     virtual void SetPowerSaveMode(bool on) override;
     virtual void SetChatMessage(const char* role, const char* content) override;
     virtual void SetSecurityLock(bool locked) override;
+    void ShowMemoList(const char* text);
+    bool HideMemoList();
 
 private:
     // ── Tiny extractors used by SetChatMessage routing ────────────────
@@ -164,6 +166,9 @@ private:
     lv_obj_t*   bf_wifi_ap_   = nullptr;
     lv_obj_t*   bf_wifi_ip_   = nullptr;
     lv_obj_t*   bf_error_text_ = nullptr;
+    lv_obj_t*   memo_panel_ = nullptr;
+    lv_obj_t*   memo_text_ = nullptr;
+    bool        memo_panel_visible_ = false;
 
     // Periodic clock refresh (1-minute resolution)
     esp_timer_handle_t clock_timer_ = nullptr;
